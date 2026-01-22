@@ -4,7 +4,7 @@
 **Story ID:** 1.1  
 **Priority:** 🔴 Critical (Bloquant)  
 **Estimation:** 4 heures  
-**Status:** 📋 À faire
+**Status:** ✅ Terminé (2026-01-22)
 
 ---
 
@@ -26,13 +26,13 @@ Cette story établit les fondations du projet. Elle crée la structure de dossie
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | Le projet Felgo est initialisé avec la structure de dossiers définie (src/qml, src/js, src/assets, tests, docs) | ☐ |
-| AC2 | Un fichier `clickwars-territory.pro` valide existe et configure Qt 6.8.3 + Felgo 4.0 | ☐ |
-| AC3 | Un `Makefile` avec les targets `build`, `run`, `clean`, `test`, `help` est créé | ☐ |
-| AC4 | L'application démarre et affiche une fenêtre avec le titre "ClickWars: Territory" | ☐ |
-| AC5 | Le build fonctionne sans chemins absolus (paths relatifs uniquement) | ☐ |
-| AC6 | Un `README.md` explique comment builder et lancer le projet | ☐ |
-| AC7 | Le projet compile sur macOS (testé sur M4) | ☐ |
+| AC1 | Le projet Felgo est initialisé avec la structure de dossiers définie (src/qml, src/js, src/assets, tests, docs) | ✅ |
+| AC2 | Un fichier `clickwars-territory.pro` valide existe et configure Qt 6.8.3 + Felgo 4.0 | ✅ |
+| AC3 | Un `Makefile` avec les targets `build`, `run`, `clean`, `test`, `help` est créé | ✅ |
+| AC4 | L'application démarre et affiche une fenêtre avec le titre "ClickWars: Territory" | ✅ |
+| AC5 | Le build fonctionne sans chemins absolus (paths relatifs uniquement) | ✅ |
+| AC6 | Un `README.md` explique comment builder et lancer le projet | ✅ |
+| AC7 | Le projet compile sur macOS (testé sur M4) | ✅ |
 
 ---
 

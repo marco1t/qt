@@ -4,8 +4,8 @@
 **Story ID:** 1.4  
 **Priority:** 🔴 Critical  
 **Estimation:** 4 heures  
-**Status:** 📋 À faire  
-**Dépend de:** Story 1.3
+**Status:** ✅ Terminé (2026-01-22)  
+**Dépend de:** Story 1.3 ✅
 
 ---
 
@@ -27,13 +27,13 @@ Créer l'écran de jeu principal avec les deux jauges d'équipe bien visibles. L
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | L'écran de jeu affiche deux jauges (Équipe A en haut/gauche, Équipe B en bas/droite) | ☐ |
-| AC2 | Chaque jauge affiche sa valeur numérique (ex: "72/100") | ☐ |
-| AC3 | Les jauges sont colorées selon l'équipe (rouge #E74C3C pour A, bleu #3498DB pour B) | ☐ |
-| AC4 | Le remplissage des jauges est animé (transition fluide ~150-200ms) | ☐ |
-| AC5 | Le nom du territoire actuel est affiché (texte "Territoire 1") | ☐ |
-| AC6 | Les jauges se connectent au GameState et reflètent ses valeurs | ☐ |
-| AC7 | Le label de chaque équipe est visible ("Équipe A", "Équipe B") | ☐ |
+| AC1 | L'écran de jeu affiche deux jauges (Équipe A en haut/gauche, Équipe B en bas/droite) | ✅ |
+| AC2 | Chaque jauge affiche sa valeur numérique (ex: "72/100") | ✅ |
+| AC3 | Les jauges sont colorées selon l'équipe (rouge #E74C3C pour A, bleu #3498DB pour B) | ✅ |
+| AC4 | Le remplissage des jauges est animé (transition fluide ~150-200ms) | ✅ |
+| AC5 | Le nom du territoire actuel est affiché (texte "Territoire 1") | ✅ |
+| AC6 | Les jauges se connectent au GameState et reflètent ses valeurs | ✅ |
+| AC7 | Le label de chaque équipe est visible ("Équipe A", "Équipe B") | ✅ |
 
 ---
 

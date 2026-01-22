@@ -4,8 +4,8 @@
 **Story ID:** 1.3  
 **Priority:** 🔴 Critical  
 **Estimation:** 4 heures  
-**Status:** 📋 À faire  
-**Dépend de:** Story 1.1
+**Status:** ✅ Terminé (2026-01-22)  
+**Dépend de:** Story 1.1 ✅
 
 ---
 
@@ -27,13 +27,13 @@ Créer le module JavaScript singleton `GameState.js` qui gère l'état global du
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | Un singleton `GameState` QML/JS gère l'état global du jeu | ☐ |
-| AC2 | Les propriétés suivantes sont disponibles : `teamAGauge` (0-100), `teamBGauge` (0-100), `gamePhase` (menu/lobby/playing/victory), `players` (array) | ☐ |
-| AC3 | Les propriétés sont observables (changements déclenchent des notifications) | ☐ |
-| AC4 | Des méthodes `incrementGauge(team)`, `resetGame()`, `setPhase(phase)` existent | ☐ |
-| AC5 | Tests unitaires vérifient le comportement du GameState (min 5 tests) | ☐ |
-| AC6 | La logique de victoire détecte quand une jauge atteint 100 | ☐ |
-| AC7 | `incrementGauge()` retourne `true` si le clic est valide, `false` si la jauge est pleine | ☐ |
+| AC1 | Un singleton `GameState` QML/JS gère l'état global du jeu | ✅ |
+| AC2 | Les propriétés suivantes sont disponibles : `teamAGauge` (0-100), `teamBGauge` (0-100), `gamePhase` (menu/lobby/playing/victory), `players` (array) | ✅ |
+| AC3 | Les propriétés sont observables (changements déclenchent des notifications) | ✅ |
+| AC4 | Des méthodes `incrementGauge(team)`, `resetGame()`, `setPhase(phase)` existent | ✅ |
+| AC5 | Tests unitaires vérifient le comportement du GameState (min 5 tests) | ⏳ À faire |
+| AC6 | La logique de victoire détecte quand une jauge atteint 100 | ✅ |
+| AC7 | `incrementGauge()` retourne `true` si le clic est valide, `false` si la jauge est pleine | ✅ |
 
 ---
 

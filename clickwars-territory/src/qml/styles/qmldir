@@ -1,0 +1,3 @@
+// Ce fichier permet d'utiliser Theme comme singleton
+module styles
+singleton Theme 1.0 Theme.qml

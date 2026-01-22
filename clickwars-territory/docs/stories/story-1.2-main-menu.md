@@ -4,8 +4,8 @@
 **Story ID:** 1.2  
 **Priority:** 🔴 Critical  
 **Estimation:** 3 heures  
-**Status:** 📋 À faire  
-**Dépend de:** Story 1.1
+**Status:** ✅ Terminé (2026-01-22)  
+**Dépend de:** Story 1.1 ✅
 
 ---
 
@@ -27,13 +27,13 @@ Créer l'écran d'accueil du jeu avec le titre et les trois boutons principaux. 
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | L'écran d'accueil affiche le titre "ClickWars: Territory" avec un style attrayant | ☐ |
-| AC2 | Trois boutons sont visibles : "Créer Partie", "Rejoindre Partie", "Quitter" | ☐ |
-| AC3 | Le bouton "Quitter" ferme l'application | ☐ |
-| AC4 | Le bouton "Créer Partie" navigue vers l'écran de Lobby (placeholder pour l'instant) | ☐ |
-| AC5 | Le bouton "Rejoindre Partie" navigue vers l'écran de recherche (placeholder) | ☐ |
-| AC6 | Le design respecte la palette de couleurs (fond #1A1A2E, texte blanc, boutons colorés) | ☐ |
-| AC7 | Les boutons ont des effets hover/press visibles (changement de couleur ou scale) | ☐ |
+| AC1 | L'écran d'accueil affiche le titre "ClickWars: Territory" avec un style attrayant | ✅ |
+| AC2 | Trois boutons sont visibles : "Créer Partie", "Rejoindre Partie", "Quitter" | ✅ |
+| AC3 | Le bouton "Quitter" ferme l'application | ✅ |
+| AC4 | Le bouton "Créer Partie" navigue vers l'écran de Lobby (placeholder pour l'instant) | ✅ |
+| AC5 | Le bouton "Rejoindre Partie" navigue vers l'écran de recherche (placeholder) | ✅ |
+| AC6 | Le design respecte la palette de couleurs (fond #1A1A2E, texte blanc, boutons colorés) | ✅ |
+| AC7 | Les boutons ont des effets hover/press visibles (changement de couleur ou scale) | ✅ |
 
 ---
 
