@@ -32,6 +32,47 @@ Rectangle {
     // Signal pour retourner au menu
     signal backToMenu
 
+    // ==========================================
+    // CONTRÔLEUR DE BOTS
+    // ==========================================
+
+    BotController {
+        id: botController
+        gameState: root.gameState
+
+        onBotClicked: function (team, botId) {
+        // console.log("Bot clic:", team, botId);
+        }
+    }
+
+    // Timer de démarrage des bots (petit délai pour que tout soit prêt)
+    Timer {
+        id: botStartTimer
+        interval: 500  // Attendre 500ms
+        repeat: false
+        running: true  // Démarre automatiquement
+
+        onTriggered: {
+            if (root.gameState && root.gameState.phase === "playing") {
+                console.log("GameScreen: Démarrage des bots...");
+                botController.setupBots(0, "normal", 2, "normal");
+                botController.startBots();
+            }
+        }
+    }
+
+    // Arrêter les bots quand l'écran est détruit
+    Component.onDestruction: {
+        botController.cleanup();
+    }
+
+    // Surveiller la victoire pour arrêter les bots
+    onShowVictoryChanged: {
+        if (showVictory) {
+            botController.stopBots();
+        }
+    }
+
     // Fond dégradé
     gradient: Gradient {
         GradientStop {
@@ -163,94 +204,62 @@ Rectangle {
             Layout.fillHeight: true
         }
 
-        // Zone de clic (placeholder pour Story 1.5)
-        Rectangle {
-            id: clickZonePlaceholder
+        // Zone de clic
+        ClickZone {
+            id: clickZone
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: 200
-            Layout.preferredHeight: 200
+            Layout.preferredWidth: 220
+            Layout.preferredHeight: 220
 
-            radius: width / 2
-            color: Theme.teamA  // TODO: Couleur selon l'équipe du joueur
-            border.color: Qt.lighter(Theme.teamA, 1.3)
-            border.width: 4
+            // Connexion au GameState
+            gameState: root.gameState
 
-            // Texte
-            Column {
-                anchors.centerIn: parent
-                spacing: 8
+            // Équipe du joueur
+            playerTeam: gameState ? gameState.localPlayerTeam : "A"
 
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "👆"
-                    font.pixelSize: 48
-                }
-
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "CLIQUEZ!"
-                    color: "white"
-                    font.pixelSize: 20
-                    font.bold: true
-                }
+            // Couleur selon l'équipe
+            teamColor: {
+                if (!gameState)
+                    return Theme.teamA;
+                return gameState.localPlayerTeam === "B" ? Theme.teamB : Theme.teamA;
             }
 
-            // Animation de pulsation
-            SequentialAnimation on scale {
-                loops: Animation.Infinite
-                NumberAnimation {
-                    to: 1.05
-                    duration: 800
-                    easing.type: Easing.InOutSine
-                }
-                NumberAnimation {
-                    to: 1.0
-                    duration: 800
-                    easing.type: Easing.InOutSine
-                }
+            // Désactiver si victoire
+            clickEnabled: !root.showVictory
+
+            // Signaux
+            onClicked: function (x, y) {
+                console.log("Clic à", x, y);
             }
 
-            // Zone cliquable (test)
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                    if (gameState) {
-                        // Test: incrémente équipe A
-                        gameState.incrementGauge("A");
-
-                        // Animation de feedback
-                        clickFeedback.start();
-                    }
-                }
-            }
-
-            // Animation de feedback au clic
-            SequentialAnimation {
-                id: clickFeedback
-
-                NumberAnimation {
-                    target: clickZonePlaceholder
-                    property: "scale"
-                    to: 1.15
-                    duration: 50
-                    easing.type: Easing.OutQuad
-                }
-                NumberAnimation {
-                    target: clickZonePlaceholder
-                    property: "scale"
-                    to: 1.0
-                    duration: 100
-                    easing.type: Easing.InOutQuad
-                }
+            onClickRejected: {
+                console.log("Clic rejeté - jauge pleine ou partie terminée");
             }
         }
 
         // Score du joueur
-        Text {
+        Column {
             Layout.alignment: Qt.AlignHCenter
-            text: "Ton score: " + (gameState ? gameState.localPlayerScore : 0)
-            color: Theme.textSecondary
-            font.pixelSize: 20
+            spacing: 4
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: "Ton score"
+                color: Theme.textMuted
+                font.pixelSize: 14
+            }
+
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text: clickZone.clickCount.toString()
+                color: {
+                    if (!gameState)
+                        return Theme.textPrimary;
+                    return gameState.localPlayerTeam === "B" ? Theme.teamB : Theme.teamA;
+                }
+                font.pixelSize: 42
+                font.bold: true
+            }
         }
 
         // Espace en bas

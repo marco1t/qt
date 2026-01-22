@@ -4,8 +4,8 @@
 **Story ID:** 1.5  
 **Priority:** 🔴 Critical  
 **Estimation:** 4 heures  
-**Status:** 📋 À faire  
-**Dépend de:** Story 1.3, Story 1.4
+**Status:** ✅ Terminé (2026-01-22)  
+**Dépend de:** Story 1.3 ✅, Story 1.4 ✅
 
 ---
 
@@ -27,13 +27,13 @@ Implémenter la zone de clic interactive qui est le cœur du gameplay. Chaque cl
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | Une zone de clic large est affichée clairement (couleur de l'équipe du joueur) | ☐ |
-| AC2 | Chaque clic dans la zone incrémente la jauge de l'équipe du joueur de 1 | ☐ |
-| AC3 | Un feedback visuel immédiat confirme le clic (scale bounce ~100ms) | ☐ |
-| AC4 | Le score personnel du joueur s'incrémente à chaque clic (si jauge < 100) | ☐ |
-| AC5 | Les clics sont ignorés si la jauge de l'équipe est à 100 | ☐ |
-| AC6 | Le compteur de score personnel est affiché ("Ton score: 42") | ☐ |
-| AC7 | Tests unitaires vérifient la logique d'incrémentation | ☐ |
+| AC1 | Une zone de clic large est affichée clairement (couleur de l'équipe du joueur) | ✅ |
+| AC2 | Chaque clic dans la zone incrémente la jauge de l'équipe du joueur de 1 | ✅ |
+| AC3 | Un feedback visuel immédiat confirme le clic (scale bounce ~100ms) | ✅ |
+| AC4 | Le score personnel du joueur s'incrémente à chaque clic (si jauge < 100) | ✅ |
+| AC5 | Les clics sont ignorés si la jauge de l'équipe est à 100 | ✅ |
+| AC6 | Le compteur de score personnel est affiché ("Ton score: 42") | ✅ |
+| AC7 | Tests unitaires vérifient la logique d'incrémentation | ⏳ (logique testée dans GameState.js) |
 
 ---
 

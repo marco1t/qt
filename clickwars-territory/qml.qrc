@@ -11,6 +11,8 @@
         <file>qml/components/AnimatedButton.qml</file>
         <file>qml/components/GameStateManager.qml</file>
         <file>qml/components/GaugeBar.qml</file>
+        <file>qml/components/ClickZone.qml</file>
+        <file>qml/components/BotController.qml</file>
 
         <!-- Styles -->
         <file>qml/styles/Theme.qml</file>
@@ -18,5 +20,6 @@
 
         <!-- JavaScript -->
         <file>qml/js/GameState.js</file>
+        <file>qml/js/BotManager.js</file>
     </qresource>
 </RCC>

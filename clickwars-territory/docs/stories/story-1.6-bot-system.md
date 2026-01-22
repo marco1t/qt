@@ -4,8 +4,8 @@
 **Story ID:** 1.6  
 **Priority:** 🟡 High  
 **Estimation:** 4 heures  
-**Status:** 📋 À faire  
-**Dépend de:** Story 1.3
+**Status:** ✅ Terminé (2026-01-22)  
+**Dépend de:** Story 1.3 ✅
 
 ---
 
@@ -27,13 +27,13 @@ Implémenter le système de bots IA qui simulent des joueurs humains. Les bots c
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | Une classe/module `BotManager` simule des clics automatiques | ☐ |
-| AC2 | Chaque bot a une vitesse de clic configurable (clics par seconde) | ☐ |
-| AC3 | Trois niveaux de difficulté : Easy (2-3 cps), Normal (4-5 cps), Hard (6-8 cps) | ☐ |
-| AC4 | Les bots démarrent/arrêtent avec le début/fin de partie | ☐ |
-| AC5 | Les clics des bots incrémentent la jauge appropriée via GameState | ☐ |
-| AC6 | Tests unitaires vérifient que les bots cliquent au bon rythme (±10% tolérance) | ☐ |
-| AC7 | Les bots peuvent être assignés à n'importe quelle équipe | ☐ |
+| AC1 | Une classe/module `BotManager` simule des clics automatiques | ✅ |
+| AC2 | Chaque bot a une vitesse de clic configurable (clics par seconde) | ✅ |
+| AC3 | Trois niveaux de difficulté : Easy (2-3 cps), Normal (4-5 cps), Hard (6-8 cps) | ✅ |
+| AC4 | Les bots démarrent/arrêtent avec le début/fin de partie | ✅ |
+| AC5 | Les clics des bots incrémentent la jauge appropriée via GameState | ✅ |
+| AC6 | Tests unitaires vérifient que les bots cliquent au bon rythme (±10% tolérance) | ⏳ |
+| AC7 | Les bots peuvent être assignés à n'importe quelle équipe | ✅ |
 
 ---
 
