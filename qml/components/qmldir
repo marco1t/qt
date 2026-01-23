@@ -1,0 +1,8 @@
+module components
+AnimatedButton 1.0 AnimatedButton.qml
+BotController 1.0 BotController.qml
+ClickZone 1.0 ClickZone.qml
+GameStateManager 1.0 GameStateManager.qml
+GaugeBar 1.0 GaugeBar.qml
+NetworkManager 1.0 NetworkManager.qml
+ToastNotification 1.0 ToastNotification.qml
