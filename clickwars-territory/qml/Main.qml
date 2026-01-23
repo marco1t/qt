@@ -27,6 +27,7 @@ ApplicationWindow {
 
     // Propriété pour exposer le gameState aux enfants
     property alias globalGameState: gameStateInstance
+    property alias globalNetwork: networkManager
 
     // Gestionnaire d'état global
     GameStateManager {
@@ -34,6 +35,27 @@ ApplicationWindow {
 
         onVictory: function (winner) {
             console.log("Victoire équipe:", winner);
+        }
+    }
+
+    // Gestionnaire réseau global
+    NetworkManager {
+        id: networkManager
+
+        onConnected: {
+            console.log("✅ Connecté au serveur !");
+        }
+
+        onDisconnected: {
+            console.log("❌ Déconnecté du serveur");
+        }
+
+        onMessageReceived: function (senderId, message) {
+            console.log("📨 Message de", senderId, ":", JSON.stringify(message));
+        }
+
+        onConnectionError: function (error) {
+            console.error("⚠️ Erreur réseau:", error);
         }
     }
 
@@ -161,37 +183,22 @@ ApplicationWindow {
         NetworkTest {}
     }
 
-    // Écran Recherche (placeholder)
+    // Écran Recherche de Serveurs
     Component {
         id: browserComponent
-        Rectangle {
-            color: Theme.background
+        ServerBrowserScreen {
+            onBackToMenu: {
+                navigator.pop();
+            }
 
-            Column {
-                anchors.centerIn: parent
-                spacing: 20
+            onJoinServer: function (ip, port) {
+                console.log("🎮 Connexion à", ip + ":" + port);
 
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "🔍 RECHERCHE DE PARTIES"
-                    color: "white"
-                    font.pixelSize: 36
-                    font.bold: true
-                }
+                // Connecter au serveur via le NetworkManager global
+                window.globalNetwork.connectToServer(ip, port);
 
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Recherche sur le réseau local..."
-                    color: Theme.textSecondary
-                    font.pixelSize: 20
-                }
-
-                AnimatedButton {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Retour"
-                    buttonColor: Theme.teamB
-                    onClicked: navigator.pop()
-                }
+                // Retour au menu
+                navigator.pop();
             }
         }
     }

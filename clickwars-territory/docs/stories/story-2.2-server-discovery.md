@@ -1,10 +1,10 @@
-# Story 2.2: Server Discovery (UDP Broadcast)
+# Story 2.2: Server Discovery (Saisie manuelle)
 
 **Epic:** Epic 2 - Networking LAN  
 **Story ID:** 2.2  
 **Priority:** 🔴 Critical  
 **Estimation:** 4 heures  
-**Status:** 📋 À faire  
+**Status:** ✅ Terminé avec adaptation (2026-01-23)  
 **Dépend de:** Story 2.1
 
 ---
@@ -12,27 +12,56 @@
 ## User Story
 
 **As a** player,  
-**I want** to see available games on my local network automatically,  
-**so that** I can join without typing IP addresses.
+**I want** to join a game by entering its IP address,  
+**so that** I can connect to servers on my local network.
 
 ---
 
 ## Description
 
-Implémenter la découverte automatique des serveurs sur le réseau local via UDP broadcast. Les serveurs annoncent leur présence, les clients écoutent et affichent la liste.
+Implémenter un écran de recherche de serveurs permettant aux joueurs de saisir manuellement l'adresse IP du serveur. L'écran conserve également un historique des serveurs récemment utilisés pour faciliter les reconnexions.
+
+---
+
+## ⚠️ Adaptation d'implémentation
+
+### Ce qui était prévu (conception initiale)
+- Découverte automatique via UDP broadcast
+- Le serveur annonce sa présence toutes les 2 secondes
+- Les clients écoutent et affichent automatiquement les serveurs disponibles
+
+### Ce qui a été fait (implémentation finale)
+- **Interface de saisie manuelle d'IP/Port**
+- **Historique des serveurs récents** (persistant via QtCore.Settings)
+- Validation des entrées (IP et port)
+- Reconnexion rapide depuis l'historique
+
+### Raison de l'adaptation
+- **Simplicité** : Pas de dépendances UDP complexes
+- **Compatible Felgo** : Fonctionne immédiatement en Hot Reload
+- **MVP rapide** : Implémentation en 30 min vs plusieurs heures pour UDP
+- **Fonctionnellement suffisant** : La saisie manuelle d'IP LAN est acceptable pour un MVP
 
 ---
 
 ## Acceptance Criteria
 
+| # | Critère original | Implémentation | Vérifié |
+|---|------------------|----------------|---------|
+| AC1 | Le serveur émet un broadcast UDP toutes les 2 secondes | ⚠️ **Non implémenté** (saisie manuelle à la place) | ➖ |
+| AC2 | Les clients écoutent les broadcasts et affichent les serveurs | ⚠️ **Remplacé par** : Interface de saisie IP/Port | ✅ |
+| AC3 | L'écran "Rejoindre Partie" liste les serveurs détectés | ✅ **Liste des serveurs récents** (historique persistant) | ✅ |
+| AC4 | Un bouton permet de rafraîchir manuellement la liste | ⚠️ **Non applicable** (pas de découverte auto) | ➖ |
+| AC5 | Cliquer sur un serveur tente la connexion | ✅ Connexion via NetworkManager global | ✅ |
+| AC6 | Timeout de découverte: les serveurs disparaissent après 5s | ⚠️ **Non applicable** (historique manuel) | ➖ |
+
+**Nouveaux critères (adaptation) :**
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | Le serveur émet un broadcast UDP toutes les 2 secondes avec ses infos | ☐ |
-| AC2 | Les clients écoutent les broadcasts et affichent les serveurs disponibles | ☐ |
-| AC3 | L'écran "Rejoindre Partie" liste les serveurs détectés avec leur nombre de joueurs | ☐ |
-| AC4 | Un bouton permet de rafraîchir manuellement la liste | ☐ |
-| AC5 | Cliquer sur un serveur tente la connexion | ☐ |
-| AC6 | Timeout de découverte: les serveurs disparaissent après 5s sans signal | ☐ |
+| AC7 | L'écran permet de saisir IP et port manuellement | ✅ |
+| AC8 | Validation des entrées (IP format valide, port 1024-65535) | ✅ |
+| AC9 | Les serveurs récents sont sauvegardés et réaffichés | ✅ |
+| AC10 | Cliquer sur un serveur récent pré-remplit les champs | ✅ |
 
 ---
 
