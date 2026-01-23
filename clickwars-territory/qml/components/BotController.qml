@@ -1,15 +1,15 @@
 /**
  * BotController.qml - Contrôleur de bots pour le jeu
  *
- * Gère la création et le contrôle des bots IA avec des Timers QML.
- * S'intègre avec le GameState pour les clics automatiques.
+ * Gère la création et le contrôle des bots IA avec des Timers QML dynamiques.
+ * Supporte N bots par équipe (A et B).
  */
 
 import QtQuick
 
 import "../styles"
 
-QtObject {
+Item {
     id: root
 
     // ==========================================
@@ -38,8 +38,8 @@ QtObject {
             }
         })
 
-    // Liste des bots actifs
-    property var activeBots: []
+    // Liste des timers de bots actifs
+    property var botTimers: []
 
     // Statistiques
     property int teamABotClicks: 0
@@ -54,49 +54,39 @@ QtObject {
     signal botsStopped
 
     // ==========================================
-    // TIMERS POUR LES BOTS
+    // COMPOSANT POUR CRÉER DES TIMERS
     // ==========================================
 
-    // Timer pour le Bot 1 (équipe B)
-    property Timer bot1Timer: Timer {
-        id: bot1Timer
-        repeat: true
-        interval: 220
-        running: false
+    Component {
+        id: botTimerComponent
 
-        onTriggered: {
-            if (root.botsRunning && root.gameState) {
-                var success = root.gameState.incrementGauge("B");
-                if (success) {
-                    root.teamBBotClicks++;
-                    root.botClicked("B", "bot1");
-                    // Varier l'intervalle pour un effet naturel
-                    interval = 200 + Math.random() * 50;
-                } else {
-                    // Jauge pleine
-                    root.stopBots();
-                }
-            }
-        }
-    }
+        Timer {
+            property string team: "A"
+            property string botId: ""
+            property var controller: null
 
-    // Timer pour le Bot 2 (équipe B)
-    property Timer bot2Timer: Timer {
-        id: bot2Timer
-        repeat: true
-        interval: 240
-        running: false
+            repeat: true
+            running: false
 
-        onTriggered: {
-            if (root.botsRunning && root.gameState) {
-                var success = root.gameState.incrementGauge("B");
-                if (success) {
-                    root.teamBBotClicks++;
-                    root.botClicked("B", "bot2");
-                    // Varier l'intervalle
-                    interval = 200 + Math.random() * 50;
-                } else {
-                    root.stopBots();
+            onTriggered: {
+                if (controller && controller.botsRunning && controller.gameState) {
+                    var success = controller.gameState.incrementGauge(team);
+                    if (success) {
+                        // Incrémenter stats
+                        if (team === "A") {
+                            controller.teamABotClicks++;
+                        } else {
+                            controller.teamBBotClicks++;
+                        }
+
+                        controller.botClicked(team, botId);
+
+                        // Varier l'intervalle pour un effet naturel
+                        interval = interval * (0.9 + Math.random() * 0.2);
+                    } else {
+                        // Jauge pleine
+                        controller.stopBots();
+                    }
                 }
             }
         }
@@ -110,16 +100,48 @@ QtObject {
      * Configure les bots (appelé avant startBots)
      */
     function setupBots(teamACount, teamADiff, teamBCount, teamBDiff) {
+        console.log("BotController: Setup -", teamACount, "bots équipe A (", teamADiff, "),", teamBCount, "bots équipe B (", teamBDiff, ")");
+
+        // Nettoyer les anciens bots
+        cleanup();
+
+        // Reset stats
         teamABotClicks = 0;
         teamBBotClicks = 0;
 
-        // Configuration des intervalles selon la difficulté
-        var diffConfig = difficulties[teamBDiff] || difficulties["normal"];
+        // Créer les bots pour l'équipe A
+        for (var i = 0; i < teamACount; i++) {
+            createBot("A", "botA_" + i, teamADiff);
+        }
 
-        bot1Timer.interval = diffConfig.min + Math.random() * (diffConfig.max - diffConfig.min);
-        bot2Timer.interval = diffConfig.min + Math.random() * (diffConfig.max - diffConfig.min);
+        // Créer les bots pour l'équipe B
+        for (var j = 0; j < teamBCount; j++) {
+            createBot("B", "botB_" + j, teamBDiff);
+        }
 
-        console.log("BotController: Setup - Difficulté:", teamBDiff);
+        console.log("BotController: ", botTimers.length, "bots créés au total");
+    }
+
+    /**
+     * Crée un bot avec son timer
+     */
+    function createBot(team, botId, difficulty) {
+        var diffConfig = difficulties[difficulty] || difficulties["normal"];
+        var interval = diffConfig.min + Math.random() * (diffConfig.max - diffConfig.min);
+
+        var timer = botTimerComponent.createObject(root, {
+            team: team,
+            botId: botId,
+            controller: root,
+            interval: interval
+        });
+
+        if (timer) {
+            botTimers.push(timer);
+            console.log("✅ Bot créé:", botId, "équipe", team, "intervalle:", Math.round(interval), "ms");
+        } else {
+            console.error("❌ Erreur création bot:", botId);
+        }
     }
 
     /**
@@ -131,33 +153,52 @@ QtObject {
             return;
         }
 
-        console.log("BotController: Démarrage des bots...");
+        if (botTimers.length === 0) {
+            console.warn("BotController: Aucun bot configuré");
+            return;
+        }
+
+        console.log("BotController: Démarrage de", botTimers.length, "bots...");
 
         botsRunning = true;
-        bot1Timer.start();
-        bot2Timer.start();
+
+        // Démarrer tous les timers
+        for (var i = 0; i < botTimers.length; i++) {
+            botTimers[i].start();
+        }
 
         botsStarted();
-        console.log("BotController: 2 bots démarrés pour équipe B");
+        console.log("✅ BotController: Tous les bots sont actifs");
     }
 
     /**
      * Arrête tous les bots
      */
     function stopBots() {
-        bot1Timer.stop();
-        bot2Timer.stop();
-        botsRunning = false;
+        console.log("BotController: Arrêt des bots...");
 
+        for (var i = 0; i < botTimers.length; i++) {
+            botTimers[i].stop();
+        }
+
+        botsRunning = false;
         botsStopped();
-        console.log("BotController: Bots arrêtés - Clics B:", teamBBotClicks);
+
+        console.log("BotController: Bots arrêtés - Clics A:", teamABotClicks, "Clics B:", teamBBotClicks);
     }
 
     /**
-     * Nettoie
+     * Nettoie tous les bots
      */
     function cleanup() {
         stopBots();
+
+        // Détruire tous les timers
+        for (var i = 0; i < botTimers.length; i++) {
+            botTimers[i].destroy();
+        }
+
+        botTimers = [];
         teamABotClicks = 0;
         teamBBotClicks = 0;
     }
@@ -169,7 +210,13 @@ QtObject {
         return {
             teamAClicks: teamABotClicks,
             teamBClicks: teamBBotClicks,
+            totalBots: botTimers.length,
             running: botsRunning
         };
+    }
+
+    // Cleanup à la destruction
+    Component.onDestruction: {
+        cleanup();
     }
 }

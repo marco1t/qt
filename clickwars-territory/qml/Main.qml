@@ -128,55 +128,41 @@ ApplicationWindow {
         }
     }
 
-    // Écran Lobby (démarre une partie de test)
+    // Écran Lobby
     Component {
         id: lobbyComponent
-        Rectangle {
-            color: Theme.background
+        LobbyScreen {
+            isHost: true  // TODO: Déterminer si c'est l'hôte
+            localPlayerId: window.globalNetwork.localPlayerId
 
-            Column {
-                anchors.centerIn: parent
-                spacing: 20
+            onBackToMenu: {
+                navigator.pop();
+            }
 
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "🎮 LOBBY"
-                    color: "white"
-                    font.pixelSize: 48
-                    font.bold: true
-                }
+            onStartGame: function (players) {
+                console.log("🚀 Lancement de la partie avec", players.length, "joueurs");
 
-                Text {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Prêt à jouer !"
-                    color: Theme.textSecondary
-                    font.pixelSize: 24
-                }
+                // Créer GameScreen avec les joueurs
+                var gameScreen = gameComponent.createObject(navigator, {
+                    gameState: window.globalGameState,
+                    players: players
+                });
 
-                AnimatedButton {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 250
-                    height: 60
-                    text: "▶ Lancer la Partie"
-                    buttonColor: Theme.success
-                    onClicked: {
-                        // Démarrer la partie
-                        gameStateInstance.setLocalPlayer("local", "Joueur 1", "A", true);
-                        gameStateInstance.startGame();
-                        navigator.push(gameComponent);
-                    }
-                }
+                // Connecter le signal
+                gameScreen.backToMenu.connect(function () {
+                    window.globalGameState.goToMenu();
+                    navigator.pop();
+                });
 
-                AnimatedButton {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    text: "Retour"
-                    buttonColor: Theme.buttonDefault
-                    onClicked: navigator.pop()
-                }
+                // Démarrer le jeu
+                window.globalGameState.setLocalPlayer("local", "Joueur 1", "A", true);
+                window.globalGameState.startGame();
+
+                // Naviguer
+                navigator.push(gameScreen);
             }
         }
     }
-
     // Écran Test Réseau
     Component {
         id: networkTestComponent

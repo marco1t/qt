@@ -18,6 +18,9 @@ Rectangle {
     // Référence au GameStateManager (passé par le parent)
     property var gameState: null
 
+    // Configuration des joueurs (du lobby)
+    property var players: []  // [{ id, name, team, isBot }]
+
     // Propriété calculée pour afficher la victoire
     property bool showVictory: {
         if (!gameState)
@@ -54,10 +57,25 @@ Rectangle {
 
         onTriggered: {
             if (root.gameState && root.gameState.phase === "playing") {
-                console.log("GameScreen: Démarrage des bots...");
-                botController.setupBots(0, "normal", 2, "normal");
-                botController.startBots();
+                console.log("GameScreen: Configuration des bots depuis le lobby...");
+                configureBots();
             }
+        }
+    }
+
+    // Configurer les bots depuis la liste des joueurs du lobby
+    function configureBots() {
+        // Compter les bots par équipe
+        var botsA = players.filter(p => p.isBot && p.team === "A").length;
+        var botsB = players.filter(p => p.isBot && p.team === "B").length;
+
+        console.log("Bots Équipe A:", botsA, "- Bots Équipe B:", botsB);
+
+        if (botsA > 0 || botsB > 0) {
+            botController.setupBots(botsA, "normal", botsB, "normal");
+            botController.startBots();
+        } else {
+            console.log("Aucun bot configuré");
         }
     }
 
