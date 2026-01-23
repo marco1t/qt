@@ -4,7 +4,7 @@
 **Story ID:** 1.7  
 **Priority:** 🔴 Critical  
 **Estimation:** 3 heures  
-**Status:** 📋 À faire  
+**Status:** ✅ Terminé (2026-01-23)  
 **Dépend de:** Story 1.4, Story 1.5, Story 1.6
 
 ---
@@ -27,13 +27,13 @@ Implémenter la détection de victoire et l'écran de fin de bataille. Quand une
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | Quand une jauge atteint 100, le jeu passe en phase "victory" | ☐ |
-| AC2 | Un écran/overlay de victoire s'affiche avec l'équipe gagnante mise en avant | ☐ |
-| AC3 | Les scores finaux de tous les joueurs sont affichés | ☐ |
-| AC4 | Un bouton "Rejouer" réinitialise les jauges et relance une bataille | ☐ |
-| AC5 | Un bouton "Menu Principal" retourne à l'écran d'accueil | ☐ |
-| AC6 | Une animation de victoire basique est jouée (flash couleur équipe gagnante) | ☐ |
-| AC7 | Le GameState est correctement réinitialisé pour une nouvelle partie | ☐ |
+| AC1 | Quand une jauge atteint 100, le jeu passe en phase "victory" | ✅ |
+| AC2 | Un écran/overlay de victoire s'affiche avec l'équipe gagnante mise en avant | ✅ |
+| AC3 | Les scores finaux de tous les joueurs sont affichés | ✅ |
+| AC4 | Un bouton "Rejouer" réinitialise les jauges et relance une bataille | ✅ |
+| AC5 | Un bouton "Menu Principal" retourne à l'écran d'accueil | ✅ |
+| AC6 | Une animation de victoire basique est jouée (flash couleur équipe gagnante) | ✅ |
+| AC7 | Le GameState est correctement réinitialisé pour une nouvelle partie | ✅ |
 
 ---
 

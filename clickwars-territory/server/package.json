@@ -1,0 +1,15 @@
+{
+  "name": "clickwars-territory-server",
+  "version": "1.0.0",
+  "description": "WebSocket server for ClickWars Territory multiplayer",
+  "main": "websocket-server.js",
+  "scripts": {
+    "start": "node websocket-server.js",
+    "dev": "node websocket-server.js 7777"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "author": "ClickWars",
+  "license": "MIT"
+}

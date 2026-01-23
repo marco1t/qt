@@ -118,6 +118,18 @@ Rectangle {
 
             AnimatedButton {
                 Layout.preferredWidth: 280
+                Layout.preferredHeight: 48
+                text: "🌐 Test Réseau (Debug)"
+                buttonColor: "#9b59b6"
+                onClicked: root.navigateTo("networkTest")
+            }
+
+            Item {
+                Layout.preferredHeight: 8
+            }
+
+            AnimatedButton {
+                Layout.preferredWidth: 280
                 Layout.preferredHeight: 56
                 text: "Quitter"
                 buttonColor: Theme.buttonDefault

@@ -66,13 +66,6 @@ Rectangle {
         botController.cleanup();
     }
 
-    // Surveiller la victoire pour arrêter les bots
-    onShowVictoryChanged: {
-        if (showVictory) {
-            botController.stopBots();
-        }
-    }
-
     // Fond dégradé
     gradient: Gradient {
         GradientStop {
@@ -268,25 +261,121 @@ Rectangle {
         }
     }
 
-    // Overlay de victoire
+    // ==========================================
+    // FLASH DE VICTOIRE
+    // ==========================================
+    Rectangle {
+        id: victoryFlash
+        anchors.fill: parent
+        color: gameState && gameState.winner === "A" ? Theme.teamA : Theme.teamB
+        opacity: 0
+        z: 100  // Au-dessus de tout
+
+        SequentialAnimation {
+            id: flashAnimation
+            loops: 2
+
+            NumberAnimation {
+                target: victoryFlash
+                property: "opacity"
+                from: 0
+                to: 0.6
+                duration: 100
+                easing.type: Easing.OutQuad
+            }
+            NumberAnimation {
+                target: victoryFlash
+                property: "opacity"
+                from: 0.6
+                to: 0
+                duration: 300
+                easing.type: Easing.InQuad
+            }
+        }
+    }
+
+    // Déclencher l'animation flash à la victoire
+    onShowVictoryChanged: {
+        if (showVictory) {
+            flashAnimation.start();
+            botController.stopBots();
+        }
+    }
+
+    // ==========================================
+    // OVERLAY DE VICTOIRE
+    // ==========================================
     Rectangle {
         id: victoryOverlay
         anchors.fill: parent
         visible: root.showVictory
-        color: Qt.rgba(0, 0, 0, 0.85)
+        color: Qt.rgba(0, 0, 0, 0)
+        z: 50
 
+        // Animation d'apparition
+        opacity: root.showVictory ? 1 : 0
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 400
+                easing.type: Easing.OutCubic
+            }
+        }
+
+        // Fond semi-transparent avec animation
+        Rectangle {
+            id: overlayBackground
+            anchors.fill: parent
+            color: "black"
+            opacity: root.showVictory ? 0.85 : 0
+            Behavior on opacity {
+                NumberAnimation {
+                    duration: 500
+                    easing.type: Easing.OutCubic
+                }
+            }
+        }
+
+        // Contenu principal
         Column {
+            id: victoryContent
             anchors.centerIn: parent
             spacing: 20
 
+            // Animation de scale à l'apparition
+            scale: root.showVictory ? 1 : 0.5
+            Behavior on scale {
+                NumberAnimation {
+                    duration: 400
+                    easing.type: Easing.OutBack
+                }
+            }
+
+            // Titre
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "🏆 VICTOIRE! 🏆"
                 color: gameState && gameState.winner === "A" ? Theme.teamA : Theme.teamB
                 font.pixelSize: 56
                 font.bold: true
+
+                // Animation de pulsation
+                SequentialAnimation on scale {
+                    running: root.showVictory
+                    loops: Animation.Infinite
+                    NumberAnimation {
+                        to: 1.05
+                        duration: 800
+                        easing.type: Easing.InOutQuad
+                    }
+                    NumberAnimation {
+                        to: 1.0
+                        duration: 800
+                        easing.type: Easing.InOutQuad
+                    }
+                }
             }
 
+            // Sous-titre équipe gagnante
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: gameState ? ("Équipe " + gameState.winner + " gagne!") : ""
@@ -294,27 +383,135 @@ Rectangle {
                 font.pixelSize: 32
             }
 
-            Item {
-                height: 20
-                width: 1
+            // Séparateur
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 200
+                height: 2
+                color: gameState && gameState.winner === "A" ? Theme.teamA : Theme.teamB
+                opacity: 0.6
             }
 
+            // Section des scores
+            Column {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 8
+
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "📊 Scores Finaux"
+                    color: Theme.textSecondary
+                    font.pixelSize: 18
+                    font.bold: true
+                }
+
+                // Score Équipe A
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 10
+
+                    Rectangle {
+                        width: 12
+                        height: 12
+                        radius: 6
+                        color: Theme.teamA
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Text {
+                        text: "Équipe A: " + (gameState ? gameState.teamAGauge : 0) + " pts"
+                        color: gameState && gameState.winner === "A" ? Theme.teamA : Theme.textMuted
+                        font.pixelSize: 16
+                        font.bold: gameState && gameState.winner === "A"
+                    }
+
+                    Text {
+                        visible: gameState && gameState.winner === "A"
+                        text: "👑"
+                        font.pixelSize: 16
+                    }
+                }
+
+                // Score Équipe B
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 10
+
+                    Rectangle {
+                        width: 12
+                        height: 12
+                        radius: 6
+                        color: Theme.teamB
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Text {
+                        text: "Équipe B: " + (gameState ? gameState.teamBGauge : 0) + " pts"
+                        color: gameState && gameState.winner === "B" ? Theme.teamB : Theme.textMuted
+                        font.pixelSize: 16
+                        font.bold: gameState && gameState.winner === "B"
+                    }
+
+                    Text {
+                        visible: gameState && gameState.winner === "B"
+                        text: "👑"
+                        font.pixelSize: 16
+                    }
+                }
+
+                // Score du joueur
+                Item {
+                    width: 1
+                    height: 10
+                }
+
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "Vos clics: " + clickZone.clickCount
+                    color: Theme.textPrimary
+                    font.pixelSize: 14
+                }
+            }
+
+            // Espace avant les boutons
+            Item {
+                width: 1
+                height: 20
+            }
+
+            // Boutons
             AnimatedButton {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "Rejouer"
+                text: "🔄 Rejouer"
                 buttonColor: gameState && gameState.winner === "A" ? Theme.teamA : Theme.teamB
                 onClicked: {
                     if (gameState) {
+                        clickZone.clickCount = 0;  // Reset le compteur de clics
                         gameState.resetGame();
+                        // Redémarrer les bots après un délai
+                        botRestartTimer.start();
                     }
                 }
             }
 
             AnimatedButton {
                 anchors.horizontalCenter: parent.horizontalCenter
-                text: "Menu Principal"
+                text: "🏠 Menu Principal"
                 buttonColor: Theme.buttonDefault
                 onClicked: root.backToMenu()
+            }
+        }
+    }
+
+    // Timer pour redémarrer les bots après Rejouer
+    Timer {
+        id: botRestartTimer
+        interval: 500
+        repeat: false
+        onTriggered: {
+            if (root.gameState && root.gameState.phase === "playing") {
+                botController.setupBots(0, "normal", 2, "normal");
+                botController.startBots();
             }
         }
     }

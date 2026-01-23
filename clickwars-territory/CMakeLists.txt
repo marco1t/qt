@@ -19,6 +19,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Qml
     Network
     QuickControls2
+    WebSockets
 )
 
 # =============================================
@@ -39,6 +40,8 @@ endif()
 
 set(PROJECT_SOURCES
     src/main.cpp
+    src/websocketserver.h
+    src/websocketserver.cpp
 )
 
 # =============================================
@@ -75,6 +78,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Qml
     Qt6::Network
     Qt6::QuickControls2
+    Qt6::WebSockets
 )
 
 # =============================================

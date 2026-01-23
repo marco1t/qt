@@ -1,0 +1,4 @@
+module screens
+GameScreen 1.0 GameScreen.qml
+MainMenuScreen 1.0 MainMenuScreen.qml
+NetworkTest 1.0 NetworkTest.qml

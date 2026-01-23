@@ -155,6 +155,12 @@ ApplicationWindow {
         }
     }
 
+    // Écran Test Réseau
+    Component {
+        id: networkTestComponent
+        NetworkTest {}
+    }
+
     // Écran Recherche (placeholder)
     Component {
         id: browserComponent
@@ -203,6 +209,9 @@ ApplicationWindow {
         case "game":
             gameState.startGame();
             navigator.push(gameComponent);
+            break;
+        case "networkTest":
+            navigator.push(networkTestComponent);
             break;
         case "menu":
             navigator.pop(null);

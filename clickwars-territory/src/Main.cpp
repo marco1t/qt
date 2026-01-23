@@ -9,6 +9,7 @@
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QUrl>
+#include "websocketserver.h"
 
 int main(int argc, char *argv[])
 {
@@ -23,6 +24,9 @@ int main(int argc, char *argv[])
 
     // Style Qt Quick Controls (Basic, Fusion, Material, Universal)
     QQuickStyle::setStyle("Basic");
+
+    // Enregistrer le type C++ pour QML
+    qmlRegisterType<WebSocketServerWrapper>("ClickWars.Network", 1, 0, "WebSocketServer");
 
     // Moteur QML
     QQmlApplicationEngine engine;
