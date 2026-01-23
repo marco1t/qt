@@ -140,7 +140,7 @@ QtObject {
 
     function sendToServer(message) {
         if (!root.isConnected) {
-            console.error("NetworkManager: Pas connecté au serveur");
+            console.error("NetworkManager:  Pas connecté au serveur");
             return;
         }
 
@@ -151,6 +151,54 @@ QtObject {
 
         var json = JSON.stringify(message);
         wsClient.sendTextMessage(json);
+    }
+
+    // ==========================================
+    // MÉTHODES DE SYNCHRONISATION DU JEU
+    // ==========================================
+
+    /**
+     * Rejoindre le jeu en tant que joueur
+     */
+    function joinGame(playerId, playerName, team) {
+        sendToServer({
+            type: "player_join",
+            playerId: playerId,
+            name: playerName,
+            team: team,
+            timestamp: Date.now()
+        });
+    }
+
+    /**
+     * Envoyer un clic au serveur
+     */
+    function sendClick(playerId) {
+        sendToServer({
+            type: "click",
+            playerId: playerId,
+            timestamp: Date.now()
+        });
+    }
+
+    /**
+     * Démarrer le jeu (host uniquement)
+     */
+    function startGame() {
+        sendToServer({
+            type: "start_game",
+            timestamp: Date.now()
+        });
+    }
+
+    /**
+     * Réinitialiser le jeu (host uniquement)
+     */
+    function resetGame() {
+        sendToServer({
+            type: "reset_game",
+            timestamp: Date.now()
+        });
     }
 
     // ==========================================

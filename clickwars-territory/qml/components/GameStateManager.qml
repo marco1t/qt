@@ -123,6 +123,11 @@ QtObject {
         _syncFromJS();
     }
 
+    function syncVictory(victoryMessage) {
+        GameStateJS.syncVictory(victoryMessage);
+        _syncFromJS();
+    }
+
     function getFullState() {
         return GameStateJS.getState();
     }

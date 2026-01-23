@@ -51,7 +51,22 @@ ApplicationWindow {
         }
 
         onMessageReceived: function (senderId, message) {
-            console.log("📨 Message de", senderId, ":", JSON.stringify(message));
+            console.log("📨 Message de", senderId, ":", message.type || "unknown");
+
+            // Gérer les messages de synchronisation
+            switch (message.type) {
+            case "state_update":
+                // Synchroniser l'état du jeu depuis le serveur
+                gameStateInstance.syncFromServer(message);
+                break;
+            case "victory":
+                // Victoire reçue du serveur
+                gameStateInstance.syncVictory(message);
+                break;
+            default:
+                console.log("Message non géré:", JSON.stringify(message));
+                break;
+            }
         }
 
         onConnectionError: function (error) {
@@ -166,7 +181,9 @@ ApplicationWindow {
     // Écran Test Réseau
     Component {
         id: networkTestComponent
-        NetworkTest {}
+        NetworkTest {
+            networkManager: window.globalNetwork
+        }
     }
 
     // Écran Recherche de Serveurs

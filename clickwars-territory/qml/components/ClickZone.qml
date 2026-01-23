@@ -36,8 +36,14 @@ Rectangle {
     // Référence au GameState (passé par le parent)
     property var gameState: null
 
+    // Référence au NetworkManager (optionnel, pour le multijoueur)
+    property var network: null
+
     // Équipe du joueur local
     property string playerTeam: "A"
+
+    // ID du joueur local (pour le réseau)
+    property string localPlayerId: ""
 
     // ==========================================
     // SIGNAUX
@@ -166,25 +172,38 @@ Rectangle {
             return;
         }
 
-        // Tenter d'incrémenter la jauge
-        var success = gameState.incrementGauge(playerTeam);
+        // Mode réseau : envoyer au serveur
+        if (network && network.isConnected && localPlayerId) {
+            network.sendClick(localPlayerId);
 
-        if (success) {
-            // Incrémenter le compteur local
+            // Feedback optimiste immédiat (avant confirmation serveur)
             clickCount++;
-
-            // Lancer l'animation de feedback
             bounceAnimation.start();
-
-            // Émettre le signal avec les coordonnées
             clicked(x, y);
 
-            // Log pour debug
-            console.log("Click #" + clickCount + " pour équipe " + playerTeam);
-        } else {
-            // Jauge pleine ou partie terminée
-            clickRejected();
-            rejectAnimation.start();
+            console.log("Click #" + clickCount + " envoyé au serveur");
+        } else
+        // Mode local : incrémenter directement
+        {
+            var success = gameState.incrementGauge(playerTeam);
+
+            if (success) {
+                // Incrémenter le compteur local
+                clickCount++;
+
+                // Lancer l'animation de feedback
+                bounceAnimation.start();
+
+                // Émettre le signal avec les coordonnées
+                clicked(x, y);
+
+                // Log pour debug
+                console.log("Click #" + clickCount + " pour équipe " + playerTeam);
+            } else {
+                // Jauge pleine ou partie terminée
+                clickRejected();
+                rejectAnimation.start();
+            }
         }
     }
 

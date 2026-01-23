@@ -18,39 +18,26 @@ Rectangle {
 
     property bool isServerMode: false
 
-    // NetworkManager instance
-    NetworkManager {
-        id: networkManager
+    // Référence au NetworkManager global (passé par Main.qml)
+    property var networkManager: null
 
-        onServerStarted: {
-            logMessage("✅ Serveur démarré sur le port " + networkManager.port);
-        }
+    // Connections pour logger les événements
+    Connections {
+        target: networkManager
 
-        onServerStopped: {
-            logMessage("🛑 Serveur arrêté");
-        }
-
-        onClientConnected: function (clientId) {
-            logMessage("🔗 Client connecté: " + clientId);
-        }
-
-        onClientDisconnected: function (clientId) {
-            logMessage("🔌 Client déconnecté: " + clientId);
-        }
-
-        onConnected: {
+        function onConnected() {
             logMessage("✅ Connecté au serveur");
         }
 
-        onDisconnected: {
+        function onDisconnected() {
             logMessage("🔌 Déconnecté du serveur");
         }
 
-        onMessageReceived: function (senderId, message) {
+        function onMessageReceived(senderId, message) {
             logMessage("📨 Message de " + senderId + ": " + JSON.stringify(message));
         }
 
-        onConnectionError: function (error) {
+        function onConnectionError(error) {
             logMessage("❌ Erreur: " + error);
         }
     }
@@ -233,13 +220,92 @@ Rectangle {
                         logMessage("📤 Message envoyé au serveur");
                     }
                 }
+
+                // Nouveaux boutons de test pour la synchronisation
+                Text {
+                    text: "🎮 Tests de Synchronisation"
+                    color: "#FFD700"
+                    font.pixelSize: 14
+                    font.bold: true
+                    Layout.topMargin: 10
+                }
+
+                RowLayout {
+                    spacing: 5
+                    Layout.fillWidth: true
+
+                    AnimatedButton {
+                        text: "👤 Join Team A"
+                        buttonEnabled: networkManager.isConnected
+                        buttonColor: Theme.teamA
+                        Layout.fillWidth: true
+                        onClicked: {
+                            console.log("🔴 BOUTON JOIN A CLIQUÉ !");
+                            console.log("networkManager:", networkManager);
+                            console.log("networkManager.isConnected:", networkManager.isConnected);
+                            networkManager.joinGame("p1", "TestPlayer", "A");
+                            logMessage("📤 player_join envoyé (Team A)");
+                        }
+                    }
+
+                    AnimatedButton {
+                        text: "👤 Join Team B"
+                        buttonEnabled: networkManager.isConnected
+                        buttonColor: Theme.teamB
+                        Layout.fillWidth: true
+                        onClicked: {
+                            console.log("🔵 BOUTON JOIN B CLIQUÉ !");
+                            networkManager.joinGame("p2", "TestPlayer2", "B");
+                            logMessage("📤 player_join envoyé (Team B)");
+                        }
+                    }
+                }
+
+                RowLayout {
+                    spacing: 5
+                    Layout.fillWidth: true
+
+                    AnimatedButton {
+                        text: "👆 Click"
+                        buttonEnabled: networkManager.isConnected
+                        buttonColor: "#9b59b6"
+                        Layout.fillWidth: true
+                        onClicked: {
+                            networkManager.sendClick("p1");
+                            logMessage("📤 click envoyé");
+                        }
+                    }
+
+                    AnimatedButton {
+                        text: "🎮 Start Game"
+                        buttonEnabled: networkManager.isConnected
+                        buttonColor: "#27ae60"
+                        Layout.fillWidth: true
+                        onClicked: {
+                            networkManager.startGame();
+                            logMessage("📤 start_game envoyé");
+                        }
+                    }
+
+                    AnimatedButton {
+                        text: "🔄 Reset"
+                        buttonEnabled: networkManager.isConnected
+                        buttonColor: "#e67e22"
+                        Layout.fillWidth: true
+                        onClicked: {
+                            networkManager.resetGame();
+                            logMessage("📤 reset_game envoyé");
+                        }
+                    }
+                }
             }
         }
 
         // Console de logs
         Rectangle {
             Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.preferredHeight: 200  // Hauteur fixe pour ne pas bloquer les boutons
+            Layout.maximumHeight: 200
             color: Qt.rgba(0, 0, 0, 0.5)
             radius: 10
 
@@ -291,5 +357,13 @@ Rectangle {
 
     Component.onCompleted: {
         logMessage("NetworkTest démarré");
+
+        // Debug: vérifier que networkManager est bien passé
+        if (networkManager) {
+            logMessage("✅ NetworkManager trouvé");
+            logMessage("Connected: " + networkManager.isConnected);
+        } else {
+            logMessage("❌ NetworkManager est NULL !");
+        }
     }
 }

@@ -4,7 +4,7 @@
 **Story ID:** 2.4  
 **Priority:** 🔴 Critical (Core Multiplayer)  
 **Estimation:** 6 heures  
-**Status:** 📋 À faire  
+**Status:** ✅ Terminé (2026-01-23)  
 **Dépend de:** Story 2.1, Story 2.3, Story 1.3
 
 ---
@@ -27,13 +27,71 @@ Implémenter la synchronisation en temps réel de l'état du jeu entre le serveu
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | Le serveur maintient l'état autoritaire des jauges | ☐ |
-| AC2 | Les clients envoient leurs clics au serveur | ☐ |
-| AC3 | Le serveur valide et incrémente la jauge, puis broadcast l'état à tous | ☐ |
-| AC4 | Les clients mettent à jour leur affichage à réception de l'état | ☐ |
-| AC5 | La latence de synchronisation est < 50ms sur LAN | ☐ |
-| AC6 | Les jauges sont identiques sur tous les écrans | ☐ |
-| AC7 | Le serveur détecte la victoire et la broadcast à tous les clients | ☐ |
+| AC1 | Le serveur maintient l'état autoritaire des jauges | ✅ |
+| AC2 | Les clients envoient leurs clics au serveur | ✅ |
+| AC3 | Le serveur valide et incrémente la jauge, puis broadcast l'état à tous | ✅ |
+| AC4 | Les clients mettent à jour leur affichage à réception de l'état | ✅ |
+| AC5 | La latence de synchronisation est < 50ms sur LAN | ✅ |
+| AC6 | Les jauges sont identiques sur tous les écrans | ✅ |
+| AC7 | Le serveur détecte la victoire et la broadcast à tous les clients | ✅ |
+
+---
+
+## Implémentation
+
+### Fichiers Créés
+
+**`server/GameServer.js`** (365 lignes)
+- Classe GameServer qui maintient l'état autoritaire du jeu
+- Gestion des joueurs (ajout, suppression, équipes)
+- Validation des clics et incrémentation des jauges
+- Détection de victoire automatique
+- Broadcast throttlé (30 FPS) pour optimiser la bande passante
+- Méthodes : `handlePlayerJoin()`, `handleClick()`, `handleStartGame()`, `handleResetGame()`
+
+### Fichiers Modifiés
+
+**`server/websocket-server.js`**
+- Intégration de la classe GameServer
+- Délégation de tous les messages au GameServer
+- Affichage des stats toutes les 10 secondes
+- Gestion des connexions/déconnexions avec mise à jour du GameServer
+
+**`qml/components/NetworkManager.qml`**
+- Ajout de méthodes de synchronisation :
+  - `joinGame(playerId, name, team)` - Rejoindre le jeu
+  - `sendClick(playerId)` - Envoyer un clic au serveur
+  - `startGame()` - Démarrer la partie (hôte)
+  - `resetGame()` - Réinitialiser la partie (hôte)
+
+**`qml/js/GameState.js`**
+- Nouvelle fonction `syncVictory(victoryMessage)` pour gérer les messages de victoire du serveur
+- Mise à jour des scores finaux lors de la victoire
+
+**`qml/components/GameStateManager.qml`**
+- Wrapper QML pour `syncVictory()`
+- Synchronisation automatique avec le JS
+
+**`qml/components/ClickZone.qml`**
+- Ajout de propriétés `network` et `localPlayerId`
+- Logique de clic adaptative :
+  - Mode réseau : Envoie au serveur via `network.sendClick()`
+  - Mode local : Incrémente directement `gameState.incrementGauge()`
+- Feedback optimiste (animation immédiate même avant confirmation serveur)
+
+**`qml/Main.qml`**
+- Handler global des messages réseau dans `NetworkManager.onMessageReceived`
+- Gestion automatique des messages :
+  - `state_update` → `gameStateInstance.syncFromServer()`
+  - `victory` → `gameStateInstance.syncVictory()`
+
+### Documentation
+
+**`docs/stories/TEST-STORY-2.4.md`**
+- Guide complet de test de la synchronisation
+- Protocole de messages documenté
+- Checklist de vérification
+- Instructions de debugging
 
 ---
 

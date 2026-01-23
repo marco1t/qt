@@ -471,6 +471,26 @@ function syncFromServer(serverState) {
     }
 }
 
+/**
+ * Synchronise depuis un message de victoire
+ * @param {object} victoryMessage - Message de victoire du serveur
+ */
+function syncVictory(victoryMessage) {
+    if (victoryMessage.winner) {
+        state.winner = victoryMessage.winner;
+        state.phase = "victory";
+
+        if (victoryMessage.finalScores) {
+            // Mettre à jour les scores finaux
+            state.teamA.players = victoryMessage.finalScores.filter(function (p) { return p.team === "A"; });
+            state.teamB.players = victoryMessage.finalScores.filter(function (p) { return p.team === "B"; });
+        }
+
+        notify();
+        notifyVictory(victoryMessage.winner);
+    }
+}
+
 // =============================================
 // EXPORT POUR TESTS
 // =============================================
