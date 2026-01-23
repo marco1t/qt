@@ -4,7 +4,8 @@
 **Story ID:** 2.5  
 **Priority:** 🟡 High  
 **Estimation:** 4 heures  
-**Status:** 📋 À faire  
+**Status:** ✅ Terminé (MVP - sans heartbeat, sans bot)  
+**Date:** 2026-01-23  
 **Dépend de:** Story 2.4
 
 ---
@@ -27,11 +28,11 @@ Gérer les cas de déconnexion de joueurs (volontaire ou perte de connexion). Le
 
 | # | Critère | Vérifié |
 |---|---------|---------|
-| AC1 | Quand un client se déconnecte, le serveur détecte le timeout (3 secondes) | ☐ |
-| AC2 | Le slot du joueur déconnecté est remplacé par un bot automatiquement | ☐ |
-| AC3 | Les autres joueurs reçoivent une notification (message toast) | ☐ |
-| AC4 | Si l'hôte se déconnecte, les clients retournent au menu avec message d'erreur | ☐ |
-| AC5 | Le jeu continue sans interruption après remplacement par bot | ☐ |
+| AC1 | Quand un client se déconnecte, le serveur détecte le timeout (3 secondes) | ⏸️ Reporté |
+| AC2 | Le slot du joueur déconnecté est remplacé par un bot automatiquement | ⏸️ Reporté |
+| AC3 | Les autres joueurs reçoivent une notification (message toast) | ✅ |
+| AC4 | Si l'hôte se déconnecte, les clients retournent au menu avec message d'erreur | ✅ |
+| AC5 | Le jeu continue sans interruption après remplacement par bot | ⏸️ Reporté |
 
 ---
 

@@ -66,9 +66,22 @@ wss.on('connection', (ws, req) => {
 
     // Gérer la déconnexion
     ws.on('close', () => {
+        // Récupérer le nom du joueur avant de le retirer
+        const player = gameServer.getPlayer(clientId);
+        const playerName = player ? player.name : clientId;
+
         gameServer.removeClient(clientId);
         console.log(`❌ Client déconnecté: ${clientId}`);
         console.log(`👥 Clients connectés: ${gameServer.clients.size}\n`);
+
+        // Notifier les autres joueurs (MVP - pas de remplacement par bot)
+        gameServer.broadcast({
+            type: 'player_left',
+            playerId: clientId,
+            playerName: playerName,
+            message: `${playerName} a quitté la partie`,
+            timestamp: Date.now()
+        });
     });
 
     // Gérer les erreurs

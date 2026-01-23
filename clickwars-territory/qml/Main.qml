@@ -36,6 +36,41 @@ ApplicationWindow {
         onVictory: function (winner) {
             console.log("Victoire équipe:", winner);
         }
+
+        // Quand le jeu démarre (localement ou via réseau)
+        onGameStarted: {
+            console.log("🎮 Main: Partie démarrée, navigation vers GameScreen");
+
+            // Si on n'est pas déjà sur GameScreen (évite double push)
+            var currentScreen = navigator.currentItem ? navigator.currentItem.toString() : "";
+            if (currentScreen.indexOf("GameScreen") === -1) {
+
+                // Préparer les joueurs pour le GameScreen
+                var players = gameStateInstance.lobbyPlayers;
+                if (!players || players.length === 0) {
+                    players = gameStateInstance.getAllPlayers();
+                }
+
+                console.log("🚀 Lancement avec", players.length, "joueurs");
+
+                // Créer GameScreen
+                var gameScreen = gameComponent.createObject(navigator, {
+                    gameState: window.globalGameState,
+                    players: players
+                });
+
+                // Connecter le signal de retour
+                gameScreen.backToMenu.connect(function () {
+                    window.globalGameState.goToMenu();
+                    navigator.pop();
+                    if (navigator.depth > 1)
+                        navigator.pop(); // Retour jusqu'au menu
+                });
+
+                // Naviguer
+                navigator.push(gameScreen);
+            }
+        }
     }
 
     // Gestionnaire réseau global
@@ -48,6 +83,13 @@ ApplicationWindow {
 
         onDisconnected: {
             console.log("❌ Déconnecté du serveur");
+
+            // MVP Story 2.5: Si déconnecté alors qu'on n'est pas au menu → serveur/hôte a quitté
+            if (navigator.currentItem && navigator.currentItem.toString().indexOf("GameScreen") !== -1) {
+                console.warn("⚠️ L'hôte a quitté la partie. Retour au menu...");
+                // Retourner au menu
+                navigator.pop();
+            }
         }
 
         onMessageReceived: function (senderId, message) {
@@ -62,6 +104,16 @@ ApplicationWindow {
             case "victory":
                 // Victoire reçue du serveur
                 gameStateInstance.syncVictory(message);
+                break;
+            case "player_left":
+                // Story 2.5: Un joueur a quitté - afficher toast
+                console.log("👤 Joueur parti:", message.playerName || message.playerId);
+                globalToast.showPlayerLeft(message.playerName || message.playerId);
+                break;
+            case "lobby_update":
+                // Story 2.3: Synchroniser l'état du lobby
+                console.log("📋 Lobby update:", message.players.length, "joueurs");
+                gameStateInstance.syncLobbyFromServer(message.players);
                 break;
             default:
                 console.log("Message non géré:", JSON.stringify(message));
@@ -119,6 +171,11 @@ ApplicationWindow {
                 easing.type: Easing.OutCubic
             }
         }
+    }
+
+    // Toast notification global
+    ToastNotification {
+        id: globalToast
     }
 
     // Écran Menu Principal

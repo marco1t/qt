@@ -31,6 +31,9 @@ QtObject {
     property bool isConnected: false
     property bool isServer: false
 
+    // Liste des joueurs du lobby (synchronisée depuis le serveur)
+    property var lobbyPlayers: []
+
     // ==========================================
     // SIGNAUX
     // ==========================================
@@ -39,6 +42,7 @@ QtObject {
     signal victory(string winner)
     signal gameStarted
     signal gameReset
+    signal lobbyUpdated
 
     // ==========================================
     // TIMER DE SYNCHRONISATION
@@ -128,6 +132,16 @@ QtObject {
         _syncFromJS();
     }
 
+    /**
+     * Synchronise l'état du lobby depuis le serveur
+     * @param players - Liste des joueurs [{id, name, team, isBot, isHost}]
+     */
+    function syncLobbyFromServer(players) {
+        console.log("📝 GameStateManager: Sync lobby avec", players.length, "joueurs");
+        lobbyPlayers = players;
+        lobbyUpdated();
+    }
+
     function getFullState() {
         return GameStateJS.getState();
     }
@@ -145,8 +159,12 @@ QtObject {
     function _syncFromJS() {
         var s = GameStateJS.getState();
 
-        if (phase !== s.phase)
+        if (phase !== s.phase) {
             phase = s.phase;
+            if (phase === "playing") {
+                gameStarted();
+            }
+        }
         if (teamAGauge !== s.teamA.gauge)
             teamAGauge = s.teamA.gauge;
         if (teamBGauge !== s.teamB.gauge)

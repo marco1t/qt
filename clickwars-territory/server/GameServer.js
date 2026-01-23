@@ -29,7 +29,7 @@ class GameServer {
         };
 
         // Clients connectés
-        this.clients = new Map();  // clientId -> { ws, playerId, playerData }
+        this.clients = new Map();  // clientId -> { ws, playerIds: [], playerData: [] }
 
         // Throttling pour les broadcasts
         this.lastBroadcast = 0;
@@ -43,8 +43,8 @@ class GameServer {
     addClient(clientId, ws) {
         this.clients.set(clientId, {
             ws: ws,
-            playerId: null,
-            playerData: null
+            playerIds: [],      // Liste des IDs de joueurs créés par ce client
+            playerData: []      // Liste des données de joueurs
         });
         console.log(`✅ GameServer: Client ${clientId} ajouté`);
     }
@@ -54,9 +54,12 @@ class GameServer {
      */
     removeClient(clientId) {
         const client = this.clients.get(clientId);
-        if (client && client.playerId) {
-            // Retirer le joueur de l'équipe
-            this.removePlayer(client.playerId);
+        if (client && client.playerIds.length > 0) {
+            // Retirer TOUS les joueurs créés par ce client
+            client.playerIds.forEach(playerId => {
+                this.removePlayer(playerId);
+                console.log(`👤 GameServer: Joueur ${playerId} retiré (client déconnecté)`);
+            });
             this.broadcastStateUpdate();
         }
         this.clients.delete(clientId);
@@ -82,6 +85,12 @@ class GameServer {
             case "reset_game":
                 this.handleResetGame(clientId, message);
                 break;
+            case "add_bot":
+                this.handleAddBot(clientId, message);
+                break;
+            case "remove_bot":
+                this.handleRemoveBot(clientId, message);
+                break;
             default:
                 console.warn(`⚠️  GameServer: Type de message inconnu: ${type}`);
         }
@@ -105,11 +114,14 @@ class GameServer {
             isHost: false
         };
 
-        // Stocker dans le client
+        // Stocker dans le client (ajouter à la liste)
         const client = this.clients.get(clientId);
         if (client) {
-            client.playerId = playerId;
-            client.playerData = playerData;
+            // Éviter les doublons
+            if (!client.playerIds.includes(playerId)) {
+                client.playerIds.push(playerId);
+                client.playerData.push(playerData);
+            }
         }
 
         // Ajouter à l'équipe
@@ -118,8 +130,8 @@ class GameServer {
         // Broadcast l'état complet au nouveau joueur
         this.sendStateToClient(clientId);
 
-        // Broadcast aux autres qu'un joueur a rejoint
-        this.broadcastStateUpdate();
+        // Broadcast le lobby à tous les clients
+        this.broadcastLobbyUpdate();
     }
 
     /**
@@ -327,6 +339,70 @@ class GameServer {
         };
 
         this.broadcast(message);
+    }
+
+    /**
+     * Diffuse l'état du lobby à tous les clients
+     */
+    broadcastLobbyUpdate() {
+        const message = {
+            type: "lobby_update",
+            players: this.getAllPlayers(),
+            phase: this.state.phase,
+            timestamp: Date.now()
+        };
+
+        console.log(`📝 Lobby broadcast: ${this.getAllPlayers().length} joueurs`);
+        this.broadcast(message);
+    }
+
+    /**
+     * Gère l'ajout d'un bot par l'hôte
+     */
+    handleAddBot(clientId, message) {
+        const { team, name } = message;
+
+        // Vérifier qu'on n'a pas trop de joueurs
+        if (this.getAllPlayers().length >= 4) {
+            console.warn("⚠️  GameServer: Lobby plein, impossible d'ajouter un bot");
+            return;
+        }
+
+        const botId = "bot_" + Date.now();
+        const botName = name || "Bot " + (this.getAllPlayers().length + 1);
+        const botTeam = team || (this.state.teamA.players.length <= this.state.teamB.players.length ? "A" : "B");
+
+        const botData = {
+            id: botId,
+            name: botName,
+            team: botTeam,
+            score: 0,
+            isBot: true,
+            isHost: false
+        };
+
+        this.addPlayer(botData);
+        console.log(`🤖 GameServer: Bot ajouté: ${botName} (Team ${botTeam})`);
+
+        this.broadcastLobbyUpdate();
+    }
+
+    /**
+     * Gère le retrait d'un bot
+     */
+    handleRemoveBot(clientId, message) {
+        const { botId } = message;
+
+        const player = this.getPlayer(botId);
+        if (!player || !player.isBot) {
+            console.warn(`⚠️  GameServer: Bot ${botId} non trouvé`);
+            return;
+        }
+
+        this.removePlayer(botId);
+        console.log(`🤖 GameServer: Bot retiré: ${player.name}`);
+
+        this.broadcastLobbyUpdate();
     }
 
     /**

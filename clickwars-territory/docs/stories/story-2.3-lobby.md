@@ -4,7 +4,7 @@
 **Story ID:** 2.3  
 **Priority:** 🔴 Critical  
 **Estimation:** 5 heures  
-**Status:** ✅ Terminé MVP Local (2026-01-23)  
+**Status:** ✅ Terminé (2026-01-23)  
 **Dépend de:** Story 2.1, Story 2.2
 
 ---
@@ -21,28 +21,21 @@
 
 Créer l'écran de lobby où l'hôte peut voir les joueurs connectés, assigner les équipes, ajouter des bots, et lancer la partie. Les clients voient le même état en temps réel.
 
-**MVP implémenté** : Version locale fonctionnelle sans synchronisation réseau. La synchronisation multijoueur sera faite dans Story 2.4.
+**Implémentation terminée** : Lobby fonctionnel avec synchronisation réseau complète.
 
 ---
 
 ## ⚠️ Adaptation d'implémentation
 
 ### Ce qui était prévu (conception initiale)
-- Lobby avec synchronisation réseau en temps réel
-- Les clients voient les mises à jour instantanément
 - Réassignation manuelle des joueurs entre équipes
 
-### Ce qui a été fait (implémentation MVP)
-- **Lobby local fonctionnel** avec interface complète
+### Ce qui a été fait (implémentation finale)
+- **Lobby local et réseau fonctionnel**
+- **Synchronisation temps réel** (via `lobby_update`)
 - **Assignment automatique des équipes** (alternance A/B)
-- **Ajout/retrait de bots** par l'hôte
-- **Validation et lancement** de la partie
-- **Pas de synchronisation réseau** (sera fait en Story 2.4)
-
-### Raison de l'adaptation
-- **MVP rapide** : Fonctionnalités locales d'abord
-- **Découplage** : Séparation lobby local vs synchronisation réseau
-- **Story 2.4** se concentrera sur la sync réseau
+- **Ajout/retrait de bots** synchronisé par le serveur
+- **Lancement synchronisé** de la partie
 
 ---
 
@@ -52,11 +45,11 @@ Créer l'écran de lobby où l'hôte peut voir les joueurs connectés, assigner 
 |---|---------|----------------|---------|
 | AC1 | L'écran Lobby affiche 4 slots de joueurs (2 par équipe) | ✅ Liste dynamique avec 2 colonnes (A/B) | ✅ |
 | AC2 | Les joueurs connectés apparaissent dans leur slot avec leur nom | ✅ Affichage joueurs avec nom/icône/statut | ✅ |
-| AC3 | L'hôte peut ajouter/retirer des bots dans les slots vides | ✅ Bouton "Ajouter Bot" + bouton ✖ par bot | ✅ |
+| AC3 | L'hôte peut ajouter/retirer des bots dans les slots vides | ✅ Synchronisé via `add_bot`/`remove_bot` | ✅ |
 | AC4 | L'hôte peut réassigner les joueurs entre les équipes | ⚠️ **Assignment automatique** (alternance A/B) | ➖ |
 | AC5 | Un bouton "Lancer" est visible uniquement par l'hôte | ✅ Bouton visible si `isHost === true` | ✅ |
 | AC6 | La partie peut démarrer avec min 2 joueurs (1+ par équipe) | ✅ Validation `canStart()` | ✅ |
-| AC7 | Les clients voient le lobby se mettre à jour en temps réel | ⚠️ **Pas implémenté** (Story 2.4) | ➖ |
+| AC7 | Les clients voient le lobby se mettre à jour en temps réel | ✅ Synchronisation via message `lobby_update` | ✅ |
 
 ---
 

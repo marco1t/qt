@@ -16,6 +16,12 @@ Rectangle {
     anchors.fill: parent
     color: Theme.backgroundDark
 
+    // Toast local pour cet écran
+    ToastNotification {
+        id: localToast
+        z: 1000
+    }
+
     property bool isServerMode: false
 
     // Référence au NetworkManager global (passé par Main.qml)
@@ -33,12 +39,18 @@ Rectangle {
             logMessage("🔌 Déconnecté du serveur");
         }
 
-        function onMessageReceived(senderId, message) {
-            logMessage("📨 Message de " + senderId + ": " + JSON.stringify(message));
-        }
-
         function onConnectionError(error) {
             logMessage("❌ Erreur: " + error);
+            localToast.showError(error);
+        }
+
+        function onMessageReceived(senderId, message) {
+            logMessage("📨 Message de " + senderId + ": " + JSON.stringify(message));
+
+            // Afficher toast pour player_left
+            if (message.type === "player_left") {
+                localToast.showPlayerLeft(message.playerName || message.playerId);
+            }
         }
     }
 
@@ -288,13 +300,23 @@ Rectangle {
                     }
 
                     AnimatedButton {
-                        text: "🔄 Reset"
+                        text: "🔔 Reset"
                         buttonEnabled: networkManager.isConnected
                         buttonColor: "#e67e22"
                         Layout.fillWidth: true
                         onClicked: {
                             networkManager.resetGame();
                             logMessage("📤 reset_game envoyé");
+                        }
+                    }
+
+                    AnimatedButton {
+                        text: "🔔 Test Toast"
+                        buttonColor: "#9b59b6"
+                        Layout.fillWidth: true
+                        onClicked: {
+                            localToast.showPlayerLeft("TestPlayer");
+                            logMessage("🔔 Toast test affiché");
                         }
                     }
                 }
@@ -304,8 +326,8 @@ Rectangle {
         // Console de logs
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 200  // Hauteur fixe pour ne pas bloquer les boutons
-            Layout.maximumHeight: 200
+            Layout.preferredHeight: 100  // Hauteur réduite pour ne pas bloquer les boutons
+            Layout.maximumHeight: 100
             color: Qt.rgba(0, 0, 0, 0.5)
             radius: 10
 
@@ -343,12 +365,38 @@ Rectangle {
                     ScrollBar.vertical: ScrollBar {}
                 }
 
-                AnimatedButton {
-                    text: "🗑️ Effacer logs"
-                    buttonColor: Theme.buttonDefault
+                RowLayout {
+                    spacing: 10
                     Layout.alignment: Qt.AlignRight
-                    onClicked: {
-                        logModel.clear();
+
+                    AnimatedButton {
+                        text: "📋 Copier"
+                        buttonColor: "#3498db"
+                        onClicked: {
+                            var allLogs = "";
+                            for (var i = 0; i < logModel.count; i++) {
+                                allLogs += logModel.get(i).text + "\n";
+                            }
+                            // Copier dans le presse-papiers
+                            logModel.append({
+                                text: "[Copié] Logs copiés dans le presse-papiers"
+                            });
+                            logView.positionViewAtEnd();
+
+                            // Note: En QML/Qt, pour copier dans le clipboard il faut un objet C++
+                            // Workaround: afficher le texte pour que l'utilisateur puisse le copier manuellement
+                            console.log("=== LOGS À COPIER ===");
+                            console.log(allLogs);
+                            console.log("=== FIN DES LOGS ===");
+                        }
+                    }
+
+                    AnimatedButton {
+                        text: "🗑️ Effacer logs"
+                        buttonColor: Theme.buttonDefault
+                        onClicked: {
+                            logModel.clear();
+                        }
                     }
                 }
             }

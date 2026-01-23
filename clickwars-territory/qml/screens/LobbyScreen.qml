@@ -20,7 +20,10 @@ Rectangle {
 
     property bool isHost: false
     property string localPlayerId: ""
-    property var players: []  // Liste des joueurs { id, name, team, isBot }
+
+    // Au lieu de gérer une liste locale, on affiche celle synchronisée du GameState
+    // 'globalGameState' est accessible car injecté ou accessible via la hiérarchie parent (Main.qml)
+    property var players: globalGameState ? globalGameState.lobbyPlayers : []
 
     // Fond dégradé
     gradient: Gradient {
@@ -41,43 +44,36 @@ Rectangle {
         return teamACount <= teamBCount ? "A" : "B";
     }
 
-    // Ajouter un joueur
+    // Dans le mode réseau, addPlayer est géré par le serveur via player_join
+    // Cette fonction ne sert plus en mode connecté, mais gardons là pour compatible local si besoin
     function addPlayer(playerId, playerName) {
-        var team = getAutoTeam();
-        players.push({
-            id: playerId,
-            name: playerName,
-            team: team,
-            isBot: false,
-            isHost: playerId === localPlayerId
-        });
-        players = players;  // Trigger refresh
+        // En mode réseau, rien à faire ici, le serveur envoie lobby_update
     }
 
-    // Ajouter un bot
+    // Demander au serveur d'ajouter un bot
     function addBot() {
         if (players.length >= 4) {
             console.warn("Lobby plein !");
             return;
         }
 
-        var botId = "bot_" + Date.now();
-        var botName = "Bot " + (players.length + 1);
-        var team = getAutoTeam();
-
-        players.push({
-            id: botId,
-            name: botName,
-            team: team,
-            isBot: true,
-            isHost: false
-        });
-        players = players;  // Trigger refresh
+        // On demande au serveur
+        if (networkManager) {
+            networkManager.sendToServer({
+                type: "add_bot",
+                team: getAutoTeam()
+            });
+        }
     }
 
-    // Retirer un bot
+    // Demander au serveur de retirer un bot
     function removeBot(botId) {
-        players = players.filter(p => p.id !== botId);
+        if (networkManager) {
+            networkManager.sendToServer({
+                type: "remove_bot",
+                botId: botId
+            });
+        }
     }
 
     // Vérifier si on peut lancer
@@ -312,7 +308,10 @@ Rectangle {
                 enabled: canStart()
 
                 onClicked: {
-                    root.startGame(players);
+                    if (networkManager) {
+                        networkManager.startGame(); // Envoie start_game au serveur
+                        // La navigation se fera quand on recevra l'update "playing" ou le message "game_start"
+                    }
                 }
             }
         }
@@ -340,13 +339,6 @@ Rectangle {
             buttonColor: Theme.danger
 
             onClicked: root.backToMenu()
-        }
-    }
-
-    // Initialisation : ajouter le joueur local
-    Component.onCompleted: {
-        if (localPlayerId) {
-            addPlayer(localPlayerId, "Joueur " + (Math.floor(Math.random() * 100)));
         }
     }
 }

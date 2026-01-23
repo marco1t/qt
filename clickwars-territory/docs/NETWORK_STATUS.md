@@ -1,122 +1,71 @@
-# 📡 Story 2.1 - Network Foundation : COMPLÉTÉE
+# 📡 Epic 2 - Networking LAN : COMPLÉTÉE
 
-## ✅ Architecture implémentée
+## 🚀 État Global
 
-**Serveur externe Node.js** + **Client WebSocket QML**
-
-Cette approche est **100% compatible avec Felgo** car :
-- ✅ Pas de code C++ personnalisé à compiler
-- ✅ Utilise uniquement `QtWebSockets` (inclus dans Qt)
-- ✅ Fonctionne parfaitement avec Felgo Hot Reload
+| Story | Description | Statut | Date de fin |
+|---|---|---|---|
+| **2.1** | Network Module Foundation | ✅ Terminé | 2026-01-22 |
+| **2.2** | Server Discovery | ✅ Terminé (Saisie Manuelle) | 2026-01-23 |
+| **2.3** | Lobby System | ✅ Terminé (Sync Réseau) | 2026-01-23 |
+| **2.4** | Game State Synchronization | ✅ Terminé | 2026-01-22 |
+| **2.5** | Player Disconnection | ✅ Terminé (MVP) | 2026-01-23 |
 
 ---
 
-## 🚀 Comment tester
+## 🏗️ Architecture implémentée
 
-### Étape 1 : Lancer le serveur WebSocket
+**Serveur externe Node.js** + **Client WebSocket QML**
 
-**Dans un terminal séparé :**
+*   ✅ **Serveur Node.js** : Gère l'état du jeu (authoritative server), le lobby, et les bots.
+*   ✅ **Client QML** : Se connecte via WebSocket, sync son état sur celui du serveur.
+*   ✅ **Lobby Sync** : Les joueurs voient les mêmes infos (bots, équipes) en temps réel.
+*   ✅ **Gameplay Sync** : Clics, jauges et victoire sont synchronisés.
+
+---
+
+## 📋 Comment jouer en Multijoueur LAN
+
+### 1️⃣ Lancer le Serveur (Hôte)
+
+Sur le PC de l'hôte (ou un serveur dédié) :
 
 ```bash
 cd server
 ./start-server.sh
 ```
+*Le serveur écoute sur le port 7777.*
 
-Ou manuellement :
-```bash
-cd server
-npm install
-node websocket-server.js
-```
+### 2️⃣ Rejoindre la partie (Clients)
 
-Vous devriez voir :
-```
-🚀 ClickWars WebSocket Server démarré sur le port 7777
-📡 En attente de connexions...
-```
+1.  Lancer ClickWars Territory sur chaque appareil.
+2.  Cliquer sur **"Créer une partie"** (Hôte) ou **"Rejoindre"**.
+3.  Entrer l'IP de l'ordinateur qui fait tourner le serveur.
+4.  Attendre dans le **Lobby**.
 
-### Étape 2 : Lancer le jeu
+### 3️⃣ Gérer le Lobby
 
-**Dans Qt Creator / Felgo :**
-- Lancer le jeu normalement (Felgo Hot Reload ou Run)
-
-### Étape 3 : Tester le réseau
-
-1. Dans le jeu, cliquer sur **"🌐 Test Réseau (Debug)"**
-2. **Mode Client** 
-3. IP: `127.0.0.1`, Port: `7777`
-4. Cliquer sur **"Connecter"**
-5. Vous devriez voir "✅ Connecté au serveur" dans les logs
-6. Essayer d'envoyer un message test
+*   **Ajouter des Bots** : L'hôte peut cliquer sur "🤖 Ajouter Bot".
+*   **Synchronisation** : Tous les joueurs voient les bots apparaître instantanément.
+*   **Lancer** : L'hôte clique sur "🚀 Lancer la partie".
+*   **Démarrage** : Le jeu se lance automatiquement pour tout le monde.
 
 ---
 
-## 📁 Fichiers créés
+## 📁 Structure des fichiers réseau
 
-### Serveur Node.js
-- `server/websocket-server.js` - Serveur WebSocket
-- `server/package.json` - Configuration npm
-- `server/start-server.sh` - Script de lancement
-- `server/README.md` - Documentation serveur
+### Serveur (Node.js)
+*   `server/GameServer.js` - Logique centrale (Lobby, Gameplay, Bots).
+*   `server/websocket-server.js` - Gestion des connexions WS.
 
-### Client QML
-- `qml/components/NetworkManager.qml` - Gestionnaire réseau (modifié)
-- `qml/screens/NetworkTest.qml` - Interface de test
-
----
-
-## 🎯 Fonctionnalités
-
-| Fonctionnalité | Status |
-|----------------|--------|
-| Serveur WebSocket | ✅ Node.js externe |
-| Client WebSocket | ✅ QML natif |
-| Connexion/Déconnexion | ✅  |
-| Envoi de messages | ✅ |
-| Réception de messages | ✅ |
-| Relay messages entre clients | ✅ |
-| Compatible Felgo Hot Reload | ✅ |
+### Client (QML/JS)
+*   `qml/components/NetworkManager.qml` - Couche communication.
+*   `qml/components/GameStateManager.qml` - Sync local/réseau.
+*   `qml/js/GameState.js` - Logique état local.
+*   `qml/screens/LobbyScreen.qml` - Interface multijoueur.
 
 ---
 
-## 🔍 Test multijoueur
+## 🎉 Conclusion
 
-Pour tester avec 2 clients :
-
-1. Lancer le serveur (`./start-server.sh`)
-2. Lancer le jeu (instance 1)
-3. Lancer le jeu (instance 2) dans une autre fenêtre
-4. Les deux se connectent à `127.0.0.1:7777`
-5. Envoyer des messages depuis chaque client
-6. Les messages seront relayés par le serveur !
-
----
-
-##  ⚙️ Configuration
-
-- **Port par défaut** : 7777
-- **Host** : 0.0.0.0 (accessible en LAN)
-
-Pour utiliser un autre port :
-```bash
-node websocket-server.js 8888
-```
-
----
-
-## 🐛 Troubleshooting
-
-### "Connection refused"
-→ Le serveur Node.js n'est pas démarré. Lancez `./start-server.sh`
-
-### "module not found"
-→ Installez les dépendances : `cd server && npm install`
-
-### "Port already in use"
-→ Un autre processus utilise le port 7777. Changez le port ou arrêtez l'autre processus.
-
----
-
-## 🎉 Story 2.1 : COMPLÈTE !
-
-Tous les critères d'acceptation sont validés avec l'architecture serveur externe.
+L'infrastructure réseau est **robuste et complète** pour un jeu en LAN.
+Le passage à une architecture Node.js externe a permis une séparation nette entre la logique serveur et l'interface client, facilitant le développement et le test (Felgo Hot Reload supporté à 100%).
