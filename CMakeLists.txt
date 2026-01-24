@@ -39,7 +39,7 @@ endif()
 # =============================================
 
 set(PROJECT_SOURCES
-    src/main.cpp
+    src/Main.cpp
     src/websocketserver.h
     src/websocketserver.cpp
 )
@@ -59,14 +59,27 @@ qt_add_qml_module(${PROJECT_NAME}
     QML_FILES
         qml/Main.qml
         qml/screens/MainMenuScreen.qml
+        qml/screens/GameScreen.qml
+        qml/screens/LobbyScreen.qml
+        qml/screens/ServerBrowserScreen.qml
+        qml/screens/NetworkTest.qml
         qml/components/AnimatedButton.qml
         qml/components/GameStateManager.qml
+        qml/components/NetworkManager.qml
+        qml/components/ToastNotification.qml
+        qml/components/ClickZone.qml
+        qml/components/BotController.qml
+        qml/components/GaugeBar.qml
         qml/styles/Theme.qml
-    SOURCES
         qml/js/GameState.js
+        qml/js/BotManager.js
     RESOURCES
-        # Ajouter ici les assets (images, sons, etc.)
+        qml/styles/qmldir
+        qml/components/qmldir
+        qml/screens/qmldir
 )
+
+set_source_files_properties(qml/styles/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 # =============================================
 # Configuration de la cible
