@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
     );
 
     // Charger le QML principal depuis les ressources
-    const QUrl url(QStringLiteral("qrc:/qml/Main.qml"));
+    const QUrl url(QStringLiteral("qrc:/ClickWars/qml/Main.qml"));
     engine.load(url);
 
     // Vérifier que le chargement a réussi
