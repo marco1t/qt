@@ -15,7 +15,7 @@
 - [Qt 6.8.3](https://www.qt.io/download) ou supérieur
 - [Felgo SDK 4.0](https://felgo.com/download) (branche Qt 6) - optionnel
 - Un compilateur C++ (Clang sur macOS, GCC sur Linux, MSVC sur Windows)
-- Make
+- CMake 3.16+
 
 ## 🚀 Installation
 
@@ -32,32 +32,18 @@ cd clickwars-territory
 # Si vous utilisez Felgo, définissez le chemin du SDK
 export FELGO_SDK_PATH=/chemin/vers/felgo/sdk
 
-# Vérifier l'installation
-make check-env
+
 ```
 
-### 3. Compiler
+### 3. Compilation
 
 ```bash
-make build
+# Configuration
+cmake -S . -B build
+
+# Compilation
+cmake --build build
 ```
-
-### 4. Lancer
-
-```bash
-make run
-```
-
-## 🔧 Commandes Make
-
-| Commande | Description |
-|----------|-------------|
-| `make build` | Compiler le projet |
-| `make run` | Lancer l'application |
-| `make test` | Exécuter les tests |
-| `make clean` | Nettoyer les fichiers de build |
-| `make check-env` | Vérifier l'environnement |
-| `make help` | Afficher l'aide |
 
 ## 📁 Structure du Projet
 
@@ -75,8 +61,7 @@ clickwars-territory/
 │   └── assets/           # Images, sons, polices
 ├── tests/                # Tests unitaires et intégration
 ├── docs/                 # Documentation
-├── Makefile              # Build system
-└── clickwars-territory.pro  # Projet Qt
+└── CMakeLists.txt        # Configuration CMake
 ```
 
 ## 📖 Documentation
@@ -91,13 +76,13 @@ clickwars-territory/
 ### Ajouter un nouveau composant QML
 
 1. Créer le fichier dans `src/qml/components/`
-2. L'ajouter dans `qml.qrc`
+2. Modifier le `CMakeLists.txt` (dans la section `qt_add_qml_module`)
 3. L'importer dans les fichiers qui l'utilisent
 
 ### Exécuter les tests
 
 ```bash
-make test
+cd build && ctest
 ```
 
 ## 📄 License
