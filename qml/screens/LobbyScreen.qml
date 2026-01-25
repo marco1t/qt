@@ -11,6 +11,7 @@ import QtQuick.Layouts
 
 import "../styles"
 import "../components"
+import ClickWars.Network
 
 Rectangle {
     id: root
@@ -104,6 +105,15 @@ Rectangle {
             text: isHost ? "👑 Vous êtes l'hôte" : "⏳ En attente de l'hôte..."
             color: isHost ? "#F1C40F" : Theme.textSecondary
             font.pixelSize: 20
+        }
+
+        Text {
+            Layout.alignment: Qt.AlignHCenter
+            visible: isHost
+            text: "📡 IP Locale: " + NetworkUtils.getLocalIpAddress()
+            color: "#3498DB"
+            font.pixelSize: 18
+            font.bold: true
         }
 
         Item {

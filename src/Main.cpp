@@ -10,6 +10,7 @@
 #include <QQuickStyle>
 #include <QUrl>
 #include "websocketserver.h"
+#include "networkutils.h"
 
 int main(int argc, char *argv[])
 {
@@ -27,6 +28,9 @@ int main(int argc, char *argv[])
 
     // Enregistrer le type C++ pour QML
     qmlRegisterType<WebSocketServerWrapper>("ClickWars.Network", 1, 0, "WebSocketServer");
+    qmlRegisterSingletonType<NetworkUtils>("ClickWars.Network", 1, 0, "NetworkUtils", [](QQmlEngine *, QJSEngine *) -> QObject * {
+        return new NetworkUtils();
+    });
 
     // Moteur QML
     QQmlApplicationEngine engine;

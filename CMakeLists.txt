@@ -42,6 +42,8 @@ set(PROJECT_SOURCES
     src/Main.cpp
     src/websocketserver.h
     src/websocketserver.cpp
+    src/networkutils.h
+    src/networkutils.cpp
 )
 
 # =============================================
