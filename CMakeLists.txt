@@ -56,6 +56,7 @@ qt_add_executable(${PROJECT_NAME}
 qt_add_qml_module(${PROJECT_NAME}
     URI ClickWars
     VERSION 1.0
+    RESOURCE_PREFIX "/"
     QML_FILES
         qml/Main.qml
         qml/screens/MainMenuScreen.qml

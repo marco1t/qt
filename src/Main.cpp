@@ -32,7 +32,7 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
 
     // Ajouter le chemin d'import pour les modules QML locaux
-    engine.addImportPath("qrc:/qml");
+    // engine.addImportPath("qrc:/qml");
 
     // Connexion pour gérer les erreurs de chargement
     QObject::connect(
