@@ -19,10 +19,10 @@ The server *seems* to broadcast updates (`GameServer.js` sends `state_update` me
 3.  **Fix GameStateManager**: Ensure the `syncFromServer` function in `GameStateManager` correctly updates the properties bound to the UI.
 
 ## Technical Tasks
--   [ ] **Analyze `GameStateManager.qml`**: Check the `syncFromServer(message)` function. Does it update the `gauge` properties that `GameScreen` is observing?
--   [ ] **Verify Network Handling**: In `Main.qml`, ensure `onMessageReceived` passes the data correctly.
--   [ ] **Debug UI Bindings**: Ensure `GameScreen.qml` gauges are bound to `GameState.teamAGauge` (or equivalent) and *not* a local variable that never changes.
--   [ ] **Test**: Run two clients. Click on one. Verify the other updates within <100ms.
+-   [x] **Analyze `GameStateManager.qml`**: Check the `syncFromServer(message)` function. Does it update the `gauge` properties that `GameScreen` is observing?
+-   [x] **Verify Network Handling**: In `Main.qml`, ensure `onMessageReceived` passes the data correctly.
+-   [x] **Debug UI Bindings**: Ensure `GameScreen.qml` gauges are bound to `GameState.teamAGauge` (or equivalent) and *not* a local variable that never changes.
+-   [x] **Test**: Run two clients. Click on one. Verify the other updates within <100ms.
 
 ## Files to Modify
 -   `src/components/GameStateManager.qml` (Check logic)
@@ -30,6 +30,6 @@ The server *seems* to broadcast updates (`GameServer.js` sends `state_update` me
 -   `src/Main.qml` (Verify signal passing)
 
 ## Definition of Done
--   [ ] Clicking on Client A updates Client A's UI.
--   [ ] Clicking on Client A updates Client B's UI.
--   [ ] Both clients show the exact same score and gauge values at all times.
+-   [x] Clicking on Client A updates Client A's UI.
+-   [x] Clicking on Client A updates Client B's UI.
+-   [x] Both clients show the exact same score and gauge values at all times.

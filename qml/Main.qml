@@ -57,6 +57,7 @@ ApplicationWindow {
                 // Créer GameScreen
                 var gameScreen = gameComponent.createObject(navigator, {
                     gameState: window.globalGameState,
+                    networkManager: window.globalNetwork,
                     players: players
                 });
 
@@ -194,6 +195,7 @@ ApplicationWindow {
         id: gameComponent
         GameScreen {
             gameState: window.globalGameState
+            networkManager: window.globalNetwork
             onBackToMenu: {
                 window.globalGameState.goToMenu();
                 navigator.pop(null);
@@ -218,6 +220,7 @@ ApplicationWindow {
                 // Créer GameScreen avec les joueurs
                 var gameScreen = gameComponent.createObject(navigator, {
                     gameState: window.globalGameState,
+                    networkManager: window.globalNetwork,
                     players: players
                 });
 

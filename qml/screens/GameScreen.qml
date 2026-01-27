@@ -17,6 +17,7 @@ Rectangle {
 
     // Référence au GameStateManager (passé par le parent)
     property var gameState: null
+    property var networkManager: null
 
     // Configuration des joueurs (du lobby)
     property var players: []  // [{ id, name, team, isBot }]
@@ -224,6 +225,8 @@ Rectangle {
 
             // Connexion au GameState
             gameState: root.gameState
+            network: root.networkManager
+            localPlayerId: gameState ? gameState.localPlayerId : ""
 
             // Équipe du joueur
             playerTeam: gameState ? gameState.localPlayerTeam : "A"

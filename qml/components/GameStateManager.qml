@@ -21,6 +21,7 @@ QtObject {
     property int maxGauge: 100
 
     property string localPlayerName: "Player"
+    property string localPlayerId: ""
     property string localPlayerTeam: ""
     property int localPlayerScore: 0
     property bool isHost: false
@@ -171,6 +172,8 @@ QtObject {
             teamBGauge = s.teamB.gauge;
         if (localPlayerName !== s.localPlayer.name)
             localPlayerName = s.localPlayer.name;
+        if (localPlayerId !== (s.localPlayer.id || ""))
+            localPlayerId = s.localPlayer.id || "";
         if (localPlayerTeam !== (s.localPlayer.team || ""))
             localPlayerTeam = s.localPlayer.team || "";
         if (localPlayerScore !== s.localPlayer.score)
