@@ -30,6 +30,9 @@ ApplicationWindow {
     property alias globalGameState: gameStateInstance
     property alias globalNetwork: networkManager
 
+    // État pour suivre une connexion en cours depuis le browser
+    property bool pendingJoinToLobby: false
+
     // Gestionnaire d'état global
     GameStateManager {
         id: gameStateInstance
@@ -80,7 +83,8 @@ ApplicationWindow {
 
         onConnected: {
             console.log("✅ Connecté au serveur !");
-            if (navigator.currentItem && navigator.currentItem.toString().indexOf("ServerBrowserScreen") !== -1) {
+            if (window.pendingJoinToLobby) {
+                window.pendingJoinToLobby = false;
                 handleNavigation("lobby_client");
             }
         }
@@ -258,6 +262,9 @@ ApplicationWindow {
 
             onJoinServer: function (ip, port) {
                 console.log("🎮 Connexion à", ip + ":" + port);
+
+                // Marquer qu'on attend une connexion pour aller au lobby
+                window.pendingJoinToLobby = true;
 
                 // Connecter au serveur via le NetworkManager global
                 window.globalNetwork.connectToServer(ip, port);
