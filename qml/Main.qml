@@ -80,6 +80,9 @@ ApplicationWindow {
 
         onConnected: {
             console.log("✅ Connecté au serveur !");
+            if (navigator.currentItem && navigator.currentItem.toString().indexOf("ServerBrowserScreen") !== -1) {
+                handleNavigation("lobby_client");
+            }
         }
 
         onDisconnected: {
@@ -124,6 +127,7 @@ ApplicationWindow {
 
         onConnectionError: function (error) {
             console.error("⚠️ Erreur réseau:", error);
+            globalToast.showError(error);
         }
     }
 
@@ -205,7 +209,7 @@ ApplicationWindow {
     Component {
         id: lobbyComponent
         LobbyScreen {
-            isHost: true  // TODO: Déterminer si c'est l'hôte
+            isHost: window.globalNetwork.isServer
             localPlayerId: window.globalNetwork.localPlayerId
 
             onBackToMenu: {
@@ -257,9 +261,6 @@ ApplicationWindow {
 
                 // Connecter au serveur via le NetworkManager global
                 window.globalNetwork.connectToServer(ip, port);
-
-                // Retour au menu
-                navigator.pop();
             }
         }
     }
@@ -269,6 +270,11 @@ ApplicationWindow {
         console.log("Navigation vers:", screenName);
         switch (screenName) {
         case "lobby":
+            window.globalNetwork.isServer = true;
+            navigator.push(lobbyComponent);
+            break;
+        case "lobby_client":
+            window.globalNetwork.isServer = false;
             navigator.push(lobbyComponent);
             break;
         case "browser":

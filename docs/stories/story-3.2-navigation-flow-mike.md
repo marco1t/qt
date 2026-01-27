@@ -23,18 +23,18 @@ This is counter-intuitive. A roadmap "Join" should lead directly to the Lobby in
 3.  **Handle Connection Success**: Use the `onConnected` signal to trigger the navigation change.
 
 ## Technical Tasks
--   [ ] **Modify `Main.qml`**:
+-   [x] **Modify `Main.qml`**:
     -   In `ServerBrowserScreen`'s `onJoinServer`, do *not* just `pop()` to menu.
     -   Instead, listen for `NetworkManager.onConnected`.
     -   When connected, navigate directly to `LobbyScreen`.
--   [ ] **Update `NetworkManager`**: Ensure it emits a clear signal when the handshake is complete.
--   [ ] **Error Handling**: If connection fails, stay on Browser screen and show error (don't go to Lobby).
+-   [x] **Update `NetworkManager`**: Ensure it emits a clear signal when the handshake is complete.
+-   [x] **Error Handling**: If connection fails, stay on Browser screen and show error (don't go to Lobby).
 
 ## Files to Modify
 -   `src/Main.qml` (Navigation logic)
 -   `src/screens/ServerBrowserScreen.qml` (Signal handling)
 
 ## Definition of Done
--   [ ] User enters IP and clicks "Se Connecter".
--   [ ] If successful, the screen transitions *directly* to the Lobby.
--   [ ] No interaction with the Main Menu is required after connection.
+-   [x] User enters IP and clicks "Se Connecter".
+-   [x] If successful, the screen transitions *directly* to the Lobby.
+-   [x] No interaction with the Main Menu is required after connection.
