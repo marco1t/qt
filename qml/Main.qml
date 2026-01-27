@@ -215,6 +215,7 @@ ApplicationWindow {
         LobbyScreen {
             isHost: window.globalNetwork.isServer
             localPlayerId: window.globalNetwork.localPlayerId
+            networkManager: window.globalNetwork
 
             onBackToMenu: {
                 navigator.pop();

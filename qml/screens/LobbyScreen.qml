@@ -20,6 +20,7 @@ Rectangle {
 
     property bool isHost: false
     property string localPlayerId: ""
+    property var networkManager: null
 
     // Au lieu de gérer une liste locale, on affiche celle synchronisée du GameState
     // 'globalGameState' est accessible car injecté ou accessible via la hiérarchie parent (Main.qml)
