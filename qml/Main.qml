@@ -272,8 +272,12 @@ ApplicationWindow {
         console.log("Navigation vers:", screenName);
         switch (screenName) {
         case "lobby":
-            // Créer une partie = devenir host
-            gameStateInstance.setLocalPlayer(null, null, null, true);
+            // Créer une partie = devenir host (SAUF si déjà connecté en tant que client)
+            if (!gameStateInstance.isConnected) {
+                // Pas encore connecté → on crée une partie locale/serveur → on est host
+                gameStateInstance.setLocalPlayer(null, null, null, true);
+            }
+            // Sinon on garde le isHost actuel (false si client connecté)
             navigator.push(lobbyComponent);
             break;
         case "browser":
