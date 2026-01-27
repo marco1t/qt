@@ -25,6 +25,19 @@ Rectangle {
     // 'globalGameState' est accessible car injecté ou accessible via la hiérarchie parent (Main.qml)
     property var players: globalGameState ? globalGameState.lobbyPlayers : []
 
+    // À l'entrée dans le lobby, le client doit s'enregistrer auprès du serveur
+    Component.onCompleted: {
+        if (networkManager && networkManager.isConnected) {
+            // Générer un nom de joueur par défaut
+            var playerName = "Joueur " + Math.floor(Math.random() * 1000);
+            var playerId = networkManager.localPlayerId || ("player_" + Date.now());
+            var team = getAutoTeam();
+
+            console.log("📝 LobbyScreen: Envoi player_join -", playerName, "Team", team);
+            networkManager.joinGame(playerId, playerName, team);
+        }
+    }
+
     // Fond dégradé
     gradient: Gradient {
         GradientStop {
