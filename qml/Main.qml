@@ -13,7 +13,6 @@ import "screens"
 import "styles"
 import "components"
 
-
 ApplicationWindow {
     id: window
 
@@ -86,7 +85,24 @@ ApplicationWindow {
         onConnected: {
             console.log("✅ Connecté au serveur !");
 
-            // Story 3.2: Navigation automatique vers le lobby après connexion
+            // 1. Définir l'identité réseau (ID généré par NetworkManager)
+            var netId = networkManager.localPlayerId;
+            var isHost = gameStateInstance.isHost; // Déjà défini dans handleNavigation pour l'hôte
+
+            // Déterminer Nom/Équipe par défaut (Simplification MVP)
+            // L'hôte est toujours A, le Rejoignant est B (sauf si logique plus complexe plus tard)
+            var name = isHost ? "Créateur" : "Joueur Invité";
+            var team = isHost ? "A" : "B";
+
+            console.log("👤 Identification :", netId, name, team, isHost ? "(Hôte)" : "(Client)");
+
+            // 2. Mettre à jour le GameState local avec le bon ID
+            gameStateInstance.setLocalPlayer(netId, name, team, isHost);
+
+            // 3. Envoyer la requête de connexion au serveur (CRUCIAL pour être reconnu)
+            networkManager.joinGame(netId, name, team);
+
+            // Story 3.2: Navigation automatique vers le lobby après connexion (Client)
             if (window.pendingNavigation === "lobby") {
                 console.log("🔄 Navigation automatique vers le Lobby");
                 window.pendingNavigation = "";
@@ -100,8 +116,13 @@ ApplicationWindow {
             // MVP Story 2.5: Si déconnecté alors qu'on n'est pas au menu → serveur/hôte a quitté
             if (navigator.currentItem && navigator.currentItem.toString().indexOf("GameScreen") !== -1) {
                 console.warn("⚠️ L'hôte a quitté la partie. Retour au menu...");
+
+                // Afficher un warning
+                globalToast.show("⚠️ Déconnecté du serveur");
+
                 // Retourner au menu
-                navigator.pop();
+                gameStateInstance.goToMenu();
+                navigator.pop(null);
             }
         }
 
@@ -136,6 +157,7 @@ ApplicationWindow {
 
         onConnectionError: function (error) {
             console.error("⚠️ Erreur réseau:", error);
+            globalToast.show("❌ Erreur réseau: " + error);
         }
     }
 
@@ -276,8 +298,8 @@ ApplicationWindow {
                 // Connecter au serveur via le NetworkManager global
                 window.globalNetwork.connectToServer(ip, port);
 
-                // Note: On ne fait plus navigator.pop() ici.
-                // La navigation se fera dans onConnected.
+            // Note: On ne fait plus navigator.pop() ici.
+            // La navigation se fera dans onConnected.
             }
         }
     }
@@ -288,7 +310,16 @@ ApplicationWindow {
         switch (screenName) {
         case "lobby":
             // Story 3.3: Créer une partie = devenir Hôte
-            window.globalGameState.setLocalPlayer("local", "Joueur 1", "A", true);
+            console.log("🏠 Création de la partie (Hôte)");
+
+            // 1. Définir comme hôte temporairement (sera confirmé dans onConnected)
+            window.globalGameState.setLocalPlayer("local_host", "Créateur", "A", true);
+
+            // 2. Connexion au serveur local (localhost)
+            // L'hôte DOIT aussi se connecter au WebSocket server pour parler aux autres
+            window.globalNetwork.connectToServer("127.0.0.1", 7777);
+
+            // 3. Aller au lobby
             navigator.push(lobbyComponent);
             break;
         case "browser":
