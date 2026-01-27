@@ -557,8 +557,24 @@ Rectangle {
             buttonColor: Theme.teamA
             onClicked: {
                 if (gameState) {
-                    for (var i = 0; i < 10; i++) {
-                        gameState.incrementGauge("A");
+                    // Si connecté, on envoie 10 clics simulés au serveur pour que tout le monde soit synchro
+                    if (networkManager && networkManager.isConnected) {
+                        for (var i = 0; i < 10; i++) {
+                            // On simule un message "click" pour l'équipe A
+                            // Note: Le serveur attend un playerId, on utilise le local
+                            // Astuce: Comme le serveur incrémente l'équipe du joueur,
+                            // cela ne marchera que si JE suis dans l'équipe A.
+                            // Pour le debug, on va faire simple :
+                            // Si je suis A, j'envoie un clic.
+                            // Si je suis B, je ne peux pas tricher pour A via le réseau sans modifier le serveur.
+                            // Donc : limitons le debug à "Moi +10" pour faire simple et sur.
+                            networkManager.sendClick(localPlayerId);
+                        }
+                    } else {
+                        // Mode local pur
+                        for (var j = 0; j < 10; j++) {
+                            gameState.incrementGauge("A");
+                        }
                     }
                 }
             }
@@ -571,8 +587,17 @@ Rectangle {
             buttonColor: Theme.teamB
             onClicked: {
                 if (gameState) {
-                    for (var i = 0; i < 10; i++) {
-                        gameState.incrementGauge("B");
+                    // Même logique : on simule 10 clics pour MOI (si je suis B)
+                    if (networkManager && networkManager.isConnected) {
+                        // Cheat simplifié : on clique pour SOI-MÊME x10
+                        // Si on voulait cliquer pour l'équipe adverse, il faudrait un message spécial "debug_add" côté serveur
+                        for (var k = 0; k < 10; k++) {
+                            networkManager.sendClick(localPlayerId);
+                        }
+                    } else {
+                        for (var l = 0; l < 10; l++) {
+                            gameState.incrementGauge("B");
+                        }
                     }
                 }
             }
@@ -585,7 +610,14 @@ Rectangle {
             buttonColor: Theme.buttonDefault
             onClicked: {
                 if (gameState) {
-                    gameState.resetGame();
+                    // Reset marche déjà en réseau car GameStateManager.resetGame() appelle sendReset()
+                    // Ah non, GameStateManager appelle GameStateJS.resetGame().
+                    // Il faut appeler le réseau si on est Host.
+                    if (networkManager && networkManager.isConnected && gameState.isHost) {
+                        networkManager.resetGame();
+                    } else {
+                        gameState.resetGame();
+                    }
                 }
             }
         }
