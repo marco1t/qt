@@ -26,6 +26,9 @@ ApplicationWindow {
     title: qsTr("ClickWars: Territory")
     color: Theme.background
 
+    // Navigation en attente (ex: après connexion réussie)
+    property string pendingNavigation: ""
+
     // Propriété pour exposer le gameState aux enfants
     property alias globalGameState: gameStateInstance
     property alias globalNetwork: networkManager
@@ -57,6 +60,8 @@ ApplicationWindow {
                 // Créer GameScreen
                 var gameScreen = gameComponent.createObject(navigator, {
                     gameState: window.globalGameState,
+                    networkManager: window.globalNetwork,
+                    localPlayerId: window.globalNetwork.localPlayerId,
                     players: players
                 });
 
@@ -80,6 +85,13 @@ ApplicationWindow {
 
         onConnected: {
             console.log("✅ Connecté au serveur !");
+
+            // Story 3.2: Navigation automatique vers le lobby après connexion
+            if (window.pendingNavigation === "lobby") {
+                console.log("🔄 Navigation automatique vers le Lobby");
+                window.pendingNavigation = "";
+                navigator.push(lobbyComponent);
+            }
         }
 
         onDisconnected: {
@@ -205,7 +217,8 @@ ApplicationWindow {
     Component {
         id: lobbyComponent
         LobbyScreen {
-            isHost: true  // TODO: Déterminer si c'est l'hôte
+            // Story 3.3: Rôle dynamique (Hôte vs Client)
+            isHost: window.globalGameState.isHost
             localPlayerId: window.globalNetwork.localPlayerId
 
             onBackToMenu: {
@@ -218,6 +231,8 @@ ApplicationWindow {
                 // Créer GameScreen avec les joueurs
                 var gameScreen = gameComponent.createObject(navigator, {
                     gameState: window.globalGameState,
+                    networkManager: window.globalNetwork,
+                    localPlayerId: window.globalNetwork.localPlayerId,
                     players: players
                 });
 
@@ -255,11 +270,14 @@ ApplicationWindow {
             onJoinServer: function (ip, port) {
                 console.log("🎮 Connexion à", ip + ":" + port);
 
+                // Story 3.2: Préparer la navigation vers le lobby
+                window.pendingNavigation = "lobby";
+
                 // Connecter au serveur via le NetworkManager global
                 window.globalNetwork.connectToServer(ip, port);
 
-                // Retour au menu
-                navigator.pop();
+                // Note: On ne fait plus navigator.pop() ici.
+                // La navigation se fera dans onConnected.
             }
         }
     }
@@ -269,6 +287,8 @@ ApplicationWindow {
         console.log("Navigation vers:", screenName);
         switch (screenName) {
         case "lobby":
+            // Story 3.3: Créer une partie = devenir Hôte
+            window.globalGameState.setLocalPlayer("local", "Joueur 1", "A", true);
             navigator.push(lobbyComponent);
             break;
         case "browser":

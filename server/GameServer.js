@@ -317,6 +317,7 @@ class GameServer {
             type: "state_update",
             teamAGauge: this.state.teamA.gauge,
             teamBGauge: this.state.teamB.gauge,
+            maxGauge: this.state.config.maxGauge,
             players: this.getAllPlayers(),
             phase: this.state.phase,
             timestamp: now

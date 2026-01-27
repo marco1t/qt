@@ -18,6 +18,10 @@ Rectangle {
     // Référence au GameStateManager (passé par le parent)
     property var gameState: null
 
+    // Référence au NetworkManager (pour les clics)
+    property var networkManager: null
+    property string localPlayerId: ""
+
     // Configuration des joueurs (du lobby)
     property var players: []  // [{ id, name, team, isBot }]
 
@@ -224,6 +228,10 @@ Rectangle {
 
             // Connexion au GameState
             gameState: root.gameState
+
+            // Connexion au Réseau (Story 3.1)
+            network: root.networkManager
+            localPlayerId: root.localPlayerId
 
             // Équipe du joueur
             playerTeam: gameState ? gameState.localPlayerTeam : "A"

@@ -123,11 +123,13 @@ QtObject {
     }
 
     function syncFromServer(serverState) {
+        // console.log("🔄 GameStateManager: Sync from server");
         GameStateJS.syncFromServer(serverState);
         _syncFromJS();
     }
 
     function syncVictory(victoryMessage) {
+        console.log("🏆 GameStateManager: Victory received via network");
         GameStateJS.syncVictory(victoryMessage);
         _syncFromJS();
     }
@@ -190,6 +192,9 @@ QtObject {
             winner = s.winner;
             victory(winner);
         }
+
+        // Émettre le signal générique de changement d'état
+        stateChanged();
     }
 
     Component.onCompleted: {
