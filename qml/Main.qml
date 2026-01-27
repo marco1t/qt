@@ -205,7 +205,7 @@ ApplicationWindow {
     Component {
         id: lobbyComponent
         LobbyScreen {
-            isHost: true  // TODO: Déterminer si c'est l'hôte
+            isHost: window.globalGameState.isHost
             localPlayerId: window.globalNetwork.localPlayerId
 
             onBackToMenu: {
@@ -255,6 +255,9 @@ ApplicationWindow {
             onJoinServer: function (ip, port) {
                 console.log("🎮 Connexion à", ip + ":" + port);
 
+                // Rejoindre une partie = devenir client
+                window.globalGameState.setLocalPlayer(null, null, null, false);
+
                 // Connecter au serveur via le NetworkManager global
                 window.globalNetwork.connectToServer(ip, port);
 
@@ -269,6 +272,8 @@ ApplicationWindow {
         console.log("Navigation vers:", screenName);
         switch (screenName) {
         case "lobby":
+            // Créer une partie = devenir host
+            gameStateInstance.setLocalPlayer(null, null, null, true);
             navigator.push(lobbyComponent);
             break;
         case "browser":
