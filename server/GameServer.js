@@ -100,18 +100,40 @@ class GameServer {
      * Gère l'arrivée d'un joueur
      */
     handlePlayerJoin(clientId, message) {
-        const { playerId, name, team } = message;
+        const { playerId, name } = message; // On ignore 'team' venant du client
 
-        console.log(`👤 GameServer: Joueur rejoint: ${name} (Team ${team})`);
+        console.log(`📨 GameServer: Demande de join reçue pour ${name} (${clientId})`);
 
-        // Créer le joueur
+        // 1. Stratégie d'Auto-Équilibrage (Auto-Balance)
+        // On compte les joueurs ACTIFS dans chaque équipe
+        const countA = this.state.teamA.players.length;
+        const countB = this.state.teamB.players.length;
+
+        let assignedTeam = "A";
+
+        // Logique : On remplit A, puis B, puis A, puis B...
+        if (countA > countB) {
+            assignedTeam = "B";
+        } else if (countB > countA) {
+            assignedTeam = "A";
+        } else {
+            // Égalité ? On alterne basé sur le nombre total (si pair -> A, impair -> B)
+            // Ou plus simple : priorité à A par défaut s'il n'y a personne
+            assignedTeam = "A";
+        }
+
+        console.log(`⚖️  Auto-Balance: A=${countA} vs B=${countB} -> Assignation ${assignedTeam}`);
+
+        console.log(`👤 GameServer: Joueur VALIDÉ: ${name} -> Team ${assignedTeam}`);
+
+        // Créer le joueur avec l'équipe imposée
         const playerData = {
             id: playerId,
-            name: name || "Player",
-            team: team,
+            name: name || `Joueur ${countA + countB + 1}`,
+            team: assignedTeam,
             score: 0,
             isBot: false,
-            isHost: false
+            isHost: false // Sera mis à jour si nécessaire
         };
 
         // Stocker dans le client (ajouter à la liste)
@@ -127,11 +149,14 @@ class GameServer {
         // Ajouter à l'équipe
         this.addPlayer(playerData);
 
-        // Broadcast l'état complet au nouveau joueur
+        // Broadcast l'état complet au nouveau joueur (pour qu'il sache qui il est)
         this.sendStateToClient(clientId);
 
         // Broadcast le lobby à tous les clients
         this.broadcastLobbyUpdate();
+
+        // Broadcast de l'état global (pour mettre à jour les jauges/scores partout)
+        this.broadcastStateUpdate();
     }
 
     /**
