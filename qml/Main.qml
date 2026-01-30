@@ -20,8 +20,8 @@ ApplicationWindow {
     visible: true
     width: 1280
     height: 720
-    minimumWidth: 800
-    minimumHeight: 600
+    minimumWidth: 360
+    minimumHeight: 640
     title: qsTr("ClickWars: Territory")
     color: Theme.background
 

@@ -182,6 +182,30 @@
         .btn-small:hover {
             background: #2c3e50;
         }
+
+        .grid-charts {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .grid-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        /* Responsive Breakpoints */
+        @media (max-width: 900px) {
+
+            .grid-charts,
+            .grid-details {
+                grid-template-columns: 1fr;
+                /* Stack vertically on small screens */
+            }
+        }
     </style>
 </head>
 
@@ -211,7 +235,7 @@
             </div>
         </div>
 
-        <div class="grid" style="grid-template-columns: 2fr 1fr;">
+        <div class="grid-charts">
             <div class="card">
                 <div class="metric-label">Charge Réseau (Messages par seconde)</div>
                 <div class="chart-container">
@@ -227,7 +251,7 @@
         </div>
 
         <!-- Player Details Grid -->
-        <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="grid-details">
             <div class="card">
                 <div class="metric-label" style="color: #e74c3c; margin-bottom: 15px;">Équipe A - Détails</div>
                 <div id="teamA-details">En attente de données...</div>

@@ -178,7 +178,7 @@ Rectangle {
         GaugeBar {
             id: gaugeA
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: Math.min(parent.width * 0.8, 500)
+            Layout.preferredWidth: Math.min(parent.width * 0.9, 500)
             Layout.preferredHeight: 60
 
             teamName: "Équipe A"
@@ -215,7 +215,7 @@ Rectangle {
         GaugeBar {
             id: gaugeB
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: Math.min(parent.width * 0.8, 500)
+            Layout.preferredWidth: Math.min(parent.width * 0.9, 500)
             Layout.preferredHeight: 60
 
             teamName: "Équipe B"
