@@ -362,7 +362,7 @@ Rectangle {
             AnimatedButton {
                 text: "🤖 Ajouter Bot"
                 buttonColor: Theme.buttonDefault
-                enabled: players.length < 4
+                // enabled: players.length < 4  -- LIMIT REMOVED
 
                 onClicked: {
                     addBot();
