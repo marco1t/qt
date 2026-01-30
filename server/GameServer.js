@@ -35,6 +35,10 @@ class GameServer {
         this.lastBroadcast = 0;
         this.BROADCAST_INTERVAL = 33; // ~30 FPS
         this.pendingBroadcast = null;
+
+        // Bot Loop
+        this.botInterval = null;
+        this.BOT_CLICK_RATE_MS = 1000; // Chaque bot tente de cliquer toutes les X ms
     }
 
     /**
@@ -207,6 +211,62 @@ class GameServer {
     }
 
     /**
+     * Simule un clic de bot
+     */
+    simulateBotClicks() {
+        if (this.state.phase !== "playing") return;
+
+        this.getAllPlayers().forEach(player => {
+            if (player.isBot) {
+                // Probabilité de clic variable pour faire "vivant"
+                if (Math.random() > 0.3) {
+                    this.handleBotClick(player);
+                }
+            }
+        });
+    }
+
+    handleBotClick(player) {
+        // Vérifier si la jauge de son équipe est pleine
+        const teamData = this.getTeamData(player.team);
+        if (teamData.gauge >= this.state.config.maxGauge) return;
+
+        // Incrémenter
+        teamData.gauge++;
+        player.score++;
+        player.clickHistory.push(Date.now());
+
+        // Vérifier victoire (rare que ce soit le bot qui gagne pile au tick, mais possible)
+        const winner = this.checkVictory();
+        if (winner) {
+            this.state.winner = winner;
+            this.state.phase = "victory";
+            this.stopBotLoop();
+            this.broadcastVictory(winner);
+        } else {
+            // On ne broadcast pas à chaque clic de bot pour ne pas spammer, 
+            // le broadcastStateUpdate régulier s'en charge via le tick des vrais joueurs ou un intervalle
+            this.broadcastStateUpdate();
+        }
+    }
+
+    startBotLoop() {
+        if (this.botInterval) clearInterval(this.botInterval);
+        console.log("🤖 GameServer: Démarrage de l'IA");
+        this.botInterval = setInterval(() => {
+            this.simulateBotClicks();
+        }, 500); // Check 2 fois par seconde
+    }
+
+    stopBotLoop() {
+        if (this.botInterval) {
+            clearInterval(this.botInterval);
+            this.botInterval = null;
+            console.log("🤖 GameServer: Arrêt de l'IA");
+        }
+    }
+
+    /**
      * Démarre le jeu
      */
     handleStartGame(clientId, message) {
@@ -219,8 +279,10 @@ class GameServer {
         // Reset des scores
         this.getAllPlayers().forEach(player => {
             player.score = 0;
+            player.clickHistory = [];
         });
 
+        this.startBotLoop();
         this.broadcastStateUpdate();
     }
 
@@ -237,8 +299,10 @@ class GameServer {
         // Reset des scores
         this.getAllPlayers().forEach(player => {
             player.score = 0;
+            player.clickHistory = [];
         });
 
+        this.stopBotLoop();
         this.broadcastStateUpdate();
     }
 

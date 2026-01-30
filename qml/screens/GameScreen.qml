@@ -39,6 +39,16 @@ Rectangle {
     // Signal pour retourner au menu
     signal backToMenu
 
+    // Reset automatique du score local quand on revient au lobby
+    Connections {
+        target: gameState
+        function onPhaseChanged() {
+            if (gameState.phase === "lobby") {
+               if (clickZone) clickZone.clickCount = 0;
+            }
+        }
+    }
+
     // ==========================================
     // CONTRÔLEUR DE BOTS
     // ==========================================

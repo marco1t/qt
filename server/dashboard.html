@@ -225,16 +225,17 @@
                 </div>
             </div>
         </div>
-    </div>
 
-    </div>
-
-    <!-- Stats Modal -->
-    <div id="statsModal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn" onclick="closeModal()">&times;</span>
-            <h2 id="modalTitle">Détails Équipe</h2>
-            <div id="modalBody">Chargement...</div>
+        <!-- Player Details Grid -->
+        <div class="grid" style="grid-template-columns: 1fr 1fr;">
+            <div class="card">
+                <div class="metric-label" style="color: #e74c3c; margin-bottom: 15px;">Équipe A - Détails</div>
+                <div id="teamA-details">En attente de données...</div>
+            </div>
+            <div class="card">
+                <div class="metric-label" style="color: #3498db; margin-bottom: 15px;">Équipe B - Détails</div>
+                <div id="teamB-details">En attente de données...</div>
+            </div>
         </div>
     </div>
 
@@ -279,14 +280,7 @@
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { position: 'bottom', labels: { color: '#fff' } } },
-                onClick: (e, elements) => {
-                    if (elements.length > 0) {
-                        const index = elements[0].index;
-                        const team = index === 0 ? 'A' : 'B';
-                        showDetailsForTeam(team);
-                    }
-                }
+                plugins: { legend: { position: 'bottom', labels: { color: '#fff' } } }
             }
         });
 
@@ -315,14 +309,6 @@
                 const data = JSON.parse(event.data);
                 latestData = data;
                 updateDashboard(data);
-
-                // Si le modal est ouvert, on met à jour les données en temps réel
-                if (document.getElementById('statsModal').style.display === 'flex') {
-                    // On récupère l'équipe actuellement affichée depuis le titre
-                    const title = document.getElementById('modalTitle').textContent;
-                    if (title.includes("Équipe A")) updateModalContent('A');
-                    if (title.includes("Équipe B")) updateModalContent('B');
-                }
             };
         }
 
@@ -341,6 +327,10 @@
             // Update Team Chart
             teamChart.data.datasets[0].data = [data.teamAConfig || 0, data.teamBConfig || 0];
             teamChart.update();
+
+            // Render Team Tables
+            renderTeamPanel('A', 'teamA-details');
+            renderTeamPanel('B', 'teamB-details');
         }
 
         function formatUptime(seconds) {
@@ -350,36 +340,15 @@
             return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
         }
 
-        // Modal Logic
-        function showDetailsForTeam(team) {
-            const modal = document.getElementById('statsModal');
-            document.getElementById('modalTitle').textContent = `Détails Équipe ${team}`;
-            document.getElementById('modalTitle').style.color = team === 'A' ? '#e74c3c' : '#3498db';
-
-            updateModalContent(team);
-
-            modal.style.display = 'flex';
-        }
-
-        function closeModal() {
-            document.getElementById('statsModal').style.display = 'none';
-        }
-
-        // Fermer en cliquant dehors
-        window.onclick = function (event) {
-            const modal = document.getElementById('statsModal');
-            if (event.target == modal) {
-                closeModal();
-            }
-        }
-
-        function updateModalContent(team) {
+        // Render Team Panel Logic
+        function renderTeamPanel(team, containerId) {
             if (!latestData || !latestData.playersList) return;
 
             const players = latestData.playersList.filter(p => p.team === team);
+            const container = document.getElementById(containerId);
 
             if (players.length === 0) {
-                document.getElementById('modalBody').innerHTML = "<p>Aucun joueur dans cette équipe.</p>";
+                container.innerHTML = "<p style='color: #666; font-style: italic;'>Aucun joueur dans cette équipe.</p>";
                 return;
             }
 
@@ -388,7 +357,7 @@
                     <tr>
                         <th>Nom</th>
                         <th>ID / Bot</th>
-                        <th>Clics Totaux</th>
+                        <th>Clics</th>
                         <th>Détails</th>
                     </tr>
                 </thead>
@@ -396,9 +365,8 @@
 
             players.forEach(p => {
                 const logsId = `logs-${p.id}`;
-                // Formatter les logs (derniers 100 clics pour ne pas surcharger)
                 const history = p.clickHistory || [];
-                const lastClicks = history.slice(-50).reverse(); // Derniers 50
+                const lastClicks = history.slice(-50).reverse();
                 const logText = lastClicks.map(ts => {
                     const date = new Date(ts);
                     return `• ${date.toLocaleTimeString()} + ${date.getMilliseconds()}ms`;
@@ -406,17 +374,18 @@
 
                 const fullLogLength = history.length;
                 const displayStyle = openLogIds.has(logsId) ? 'block' : 'none';
+                const btnText = openLogIds.has(logsId) ? 'Masquer' : `Voir (${fullLogLength})`;
 
                 html += `<tr>
                     <td><strong>${p.name}</strong></td>
                     <td>${p.isBot ? '🤖 Bot' : p.id.substring(0, 8)}</td>
-                    <td style="font-size: 1.2em; font-weight: bold">${p.score}</td>
+                    <td style="font-size: 1.1em; font-weight: bold">${p.score}</td>
                     <td>
                         <button class="btn-small" onclick="toggleLogs('${logsId}')">
-                            Voir timestamps (${fullLogLength})
+                            ${btnText}
                         </button>
                         <div id="${logsId}" class="log-details" style="display: ${displayStyle}">
-                            ${fullLogLength > 50 ? '<i>(Derniers 50 clics)</i><br>' : ''}
+                            ${fullLogLength > 50 ? '<i>(Derniers 50)</i><br>' : ''}
                             ${logText || 'Aucun clic'}
                         </div>
                     </td>
@@ -424,21 +393,7 @@
             });
 
             html += `</tbody></table>`;
-
-            // Note: Si on tape récursivement updateModalContent, on recrée le HTML, 
-            // ce qui ferme les logs ouverts. C'est un compromis pour le MVP.
-            // Pour faire mieux, il faudrait update seulement les valeurs.
-            // Pour l'instant on va éviter de refresh si l'utilisateur regarde les logs (ou refresh que les nombres).
-            // Simplification: On remplace tout le body.
-
-            // Astuce: Vérifier si un log est ouvert pour le restaurer ? 
-            // Trop complexe pour ce snippet. On laisse comme ça.
-
-            // Correction: Si on update en boucle, c'est impossible de lire.
-            // On ne va pas appeler updateModalContent depuis onmessage pour l'instant, seulement à l'ouverture.
-            // L'utilisateur devra fermer/rouvrir pour rafraichir, ou on ajoute un bouton "Refresh".
-
-            document.getElementById('modalBody').innerHTML = html;
+            container.innerHTML = html;
         }
 
         function toggleLogs(id) {
