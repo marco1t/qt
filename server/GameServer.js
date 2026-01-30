@@ -136,7 +136,9 @@ class GameServer {
             team: assignedTeam,
             score: 0,
             isBot: false,
-            isHost: false // Sera mis à jour si nécessaire
+            isBot: false,
+            isHost: false, // Sera mis à jour si nécessaire
+            clickHistory: [] // Historique des timestamps de clics
         };
 
         // Stocker dans le client (ajouter à la liste)
@@ -191,6 +193,7 @@ class GameServer {
 
         // Incrémenter le score du joueur
         player.score++;
+        player.clickHistory.push(Date.now());
 
         // Vérifier la victoire
         const winner = this.checkVictory();
@@ -408,7 +411,9 @@ class GameServer {
             team: botTeam,
             score: 0,
             isBot: true,
-            isHost: false
+            isBot: true,
+            isHost: false,
+            clickHistory: []
         };
 
         this.addPlayer(botData);
@@ -483,7 +488,9 @@ class GameServer {
             clients: this.clients.size,
             players: this.getAllPlayers().length,
             teamAGauge: this.state.teamA.gauge,
-            teamBGauge: this.state.teamB.gauge
+            teamAGauge: this.state.teamA.gauge,
+            teamBGauge: this.state.teamB.gauge,
+            playersList: this.getAllPlayers()
         };
     }
 }
