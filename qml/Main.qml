@@ -242,6 +242,7 @@ ApplicationWindow {
             // Story 3.3: Rôle dynamique (Hôte vs Client)
             isHost: window.globalGameState.isHost
             localPlayerId: window.globalNetwork.localPlayerId
+            networkManager: window.globalNetwork // CRITICAL FIX: Injecter le networkManager
 
             onBackToMenu: {
                 navigator.pop();
