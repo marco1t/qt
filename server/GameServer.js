@@ -460,10 +460,10 @@ class GameServer {
         const { team, name } = message;
 
         // Vérifier qu'on n'a pas trop de joueurs
-        if (this.getAllPlayers().length >= 4) {
-            console.warn("⚠️  GameServer: Lobby plein, impossible d'ajouter un bot");
-            return;
-        }
+        // if (this.getAllPlayers().length >= 4) {
+        //    console.warn("⚠️  GameServer: Lobby plein, impossible d'ajouter un bot");
+        //    return;
+        // } -- LIMIT REMOVED
 
         const botId = "bot_" + Date.now();
         const botName = name || "Bot " + (this.getAllPlayers().length + 1);
