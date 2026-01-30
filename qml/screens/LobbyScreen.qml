@@ -121,7 +121,74 @@ Rectangle {
         }
 
         Item {
-            Layout.preferredHeight: 20
+            Layout.preferredHeight: 10
+        }
+
+        // Configuration Objectif (Visible par tous, modifiable par Host)
+        ColumnLayout {
+            Layout.alignment: Qt.AlignHCenter
+            spacing: 5
+
+            Text {
+                text: "🎯 Objectif de clics"
+                color: Theme.textSecondary
+                font.pixelSize: 16
+                Layout.alignment: Qt.AlignHCenter
+            }
+
+            RowLayout {
+                spacing: 10
+                Layout.alignment: Qt.AlignHCenter
+
+                // Pour l'hôte: Champ éditable
+                TextField {
+                    id: maxGaugeInput
+                    visible: isHost
+                    text: globalGameState ? globalGameState.config.maxGauge.toString() : "100"
+                    color: "white"
+                    font.pixelSize: 20
+                    font.bold: true
+                    horizontalAlignment: TextInput.AlignHCenter
+                    background: Rectangle {
+                        color: Qt.rgba(0, 0, 0, 0.5)
+                        radius: 8
+                        border.color: Theme.accent
+                        border.width: 1
+                    }
+                    Layout.preferredWidth: 120
+                    validator: IntValidator { bottom: 10; top: 1000000 }
+
+                    onEditingFinished: {
+                        var val = parseInt(text);
+                        if (!isNaN(val) && networkManager) {
+                            networkManager.sendToServer({
+                                type: "update_config",
+                                maxGauge: val
+                            });
+                        }
+                    }
+                }
+
+                // Pour les clients: Texte simple
+                Text {
+                    visible: !isHost
+                    text: globalGameState ? globalGameState.config.maxGauge.toString() : "100"
+                    color: "white"
+                    font.pixelSize: 24
+                    font.bold: true
+                }
+
+                Text {
+                    text: "clics"
+                    color: Theme.textSecondary
+                    font.pixelSize: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+        }
+
+        Item {
+            Layout.preferredHeight: 10
         }
 
         // Deux colonnes : Équipe A et Équipe B
