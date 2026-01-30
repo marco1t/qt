@@ -24,6 +24,9 @@ Rectangle {
     // Au lieu de gérer une liste locale, on affiche celle synchronisée du GameState
     // 'globalGameState' est accessible car injecté ou accessible via la hiérarchie parent (Main.qml)
     property var players: globalGameState ? globalGameState.lobbyPlayers : []
+    
+    // Ajout de la propriété manquante pour l'injection depuis Main.qml
+    property var networkManager: null
 
     // Fond dégradé
     gradient: Gradient {
