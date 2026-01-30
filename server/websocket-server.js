@@ -67,7 +67,8 @@ setInterval(() => {
         memory: Math.round(used * 100) / 100,
         uptime: Math.floor((Date.now() - startTime) / 1000),
         teamAConfig: stats.teamAGauge, // Détourné pour afficher répartition ou score
-        teamBConfig: stats.teamBGauge
+        teamBConfig: stats.teamBGauge,
+        playersList: stats.playersList
     };
 
     // Envoyer à tous les dashboards connectés

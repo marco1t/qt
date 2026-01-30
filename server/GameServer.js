@@ -91,6 +91,9 @@ class GameServer {
             case "remove_bot":
                 this.handleRemoveBot(clientId, message);
                 break;
+            case "update_config":
+                this.handleUpdateConfig(clientId, message);
+                break;
             default:
                 console.warn(`⚠️  GameServer: Type de message inconnu: ${type}`);
         }
@@ -133,7 +136,9 @@ class GameServer {
             team: assignedTeam,
             score: 0,
             isBot: false,
-            isHost: false // Sera mis à jour si nécessaire
+            isBot: false,
+            isHost: false, // Sera mis à jour si nécessaire
+            clickHistory: [] // Historique des timestamps de clics
         };
 
         // Stocker dans le client (ajouter à la liste)
@@ -188,6 +193,7 @@ class GameServer {
 
         // Incrémenter le score du joueur
         player.score++;
+        player.clickHistory.push(Date.now());
 
         // Vérifier la victoire
         const winner = this.checkVictory();
@@ -375,6 +381,7 @@ class GameServer {
             type: "lobby_update",
             players: this.getAllPlayers(),
             phase: this.state.phase,
+            maxGauge: this.state.config.maxGauge, // Envoyer la config actuelle
             timestamp: Date.now()
         };
 
@@ -404,7 +411,9 @@ class GameServer {
             team: botTeam,
             score: 0,
             isBot: true,
-            isHost: false
+            isBot: true,
+            isHost: false,
+            clickHistory: []
         };
 
         this.addPlayer(botData);
@@ -429,6 +438,24 @@ class GameServer {
         console.log(`🤖 GameServer: Bot retiré: ${player.name}`);
 
         this.broadcastLobbyUpdate();
+    }
+
+    /**
+     * Gère la mise à jour de la configuration (Objectif de clics)
+     */
+    handleUpdateConfig(clientId, message) {
+        const { maxGauge } = message;
+
+        if (!maxGauge || maxGauge < 10) {
+            return; // Ignorer valeurs invalides
+        }
+
+        console.log(`⚙️  GameServer: Config mise à jour: Objectif = ${maxGauge}`);
+        this.state.config.maxGauge = maxGauge;
+
+        // Diffuser à tout le monde
+        this.broadcastLobbyUpdate();
+        this.broadcastStateUpdate();
     }
 
     /**
@@ -461,7 +488,9 @@ class GameServer {
             clients: this.clients.size,
             players: this.getAllPlayers().length,
             teamAGauge: this.state.teamA.gauge,
-            teamBGauge: this.state.teamB.gauge
+            teamAGauge: this.state.teamA.gauge,
+            teamBGauge: this.state.teamB.gauge,
+            playersList: this.getAllPlayers()
         };
     }
 }
