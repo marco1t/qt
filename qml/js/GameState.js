@@ -463,6 +463,26 @@ function syncFromServer(serverState) {
         state.config.maxGauge = serverState.maxGauge;
     }
 
+    // CRITICAL FIX: Synchroniser le joueur local avec la vérité du serveur
+    // Si le serveur a changé notre équipe (auto-balance), on doit se mettre à jour
+    if (state.localPlayer.id && serverState.players) {
+        var foundMe = false;
+        for (var i = 0; i < serverState.players.length; i++) {
+            var p = serverState.players[i];
+            if (p.id === state.localPlayer.id) {
+                // On s'est trouvé ! Mettre à jour nos infos locales
+                if (state.localPlayer.team !== p.team) {
+                    console.log("🔄 GameState: Correction équipe locale " + state.localPlayer.team + " -> " + p.team);
+                    state.localPlayer.team = p.team;
+                }
+                state.localPlayer.isHost = p.isHost;
+                state.localPlayer.score = p.score;
+                foundMe = true;
+                break;
+            }
+        }
+    }
+
     notify();
 
     // Vérifier victoire
