@@ -459,6 +459,10 @@ function syncFromServer(serverState) {
         state.teamB.players = serverState.players.filter(function (p) { return p.team === "B"; });
     }
 
+    if (serverState.maxGauge !== undefined) {
+        state.config.maxGauge = serverState.maxGauge;
+    }
+
     notify();
 
     // Vérifier victoire

@@ -91,6 +91,9 @@ class GameServer {
             case "remove_bot":
                 this.handleRemoveBot(clientId, message);
                 break;
+            case "update_config":
+                this.handleUpdateConfig(clientId, message);
+                break;
             default:
                 console.warn(`⚠️  GameServer: Type de message inconnu: ${type}`);
         }
@@ -375,6 +378,7 @@ class GameServer {
             type: "lobby_update",
             players: this.getAllPlayers(),
             phase: this.state.phase,
+            maxGauge: this.state.config.maxGauge, // Envoyer la config actuelle
             timestamp: Date.now()
         };
 
@@ -429,6 +433,24 @@ class GameServer {
         console.log(`🤖 GameServer: Bot retiré: ${player.name}`);
 
         this.broadcastLobbyUpdate();
+    }
+
+    /**
+     * Gère la mise à jour de la configuration (Objectif de clics)
+     */
+    handleUpdateConfig(clientId, message) {
+        const { maxGauge } = message;
+
+        if (!maxGauge || maxGauge < 10) {
+            return; // Ignorer valeurs invalides
+        }
+
+        console.log(`⚙️  GameServer: Config mise à jour: Objectif = ${maxGauge}`);
+        this.state.config.maxGauge = maxGauge;
+
+        // Diffuser à tout le monde
+        this.broadcastLobbyUpdate();
+        this.broadcastStateUpdate();
     }
 
     /**
