@@ -52,6 +52,8 @@ class GameServer {
         this.victoryTime = null;
         // Durée pendant laquelle on accepte encore des clics "tardifs" à comptabiliser
         this.LATENCY_WINDOW_MS = 1000;
+        // Temps de broadcast de la victoire (ms)
+        this.victoryBroadcastMs = null;
     }
 
     /**
@@ -493,7 +495,13 @@ class GameServer {
             timestamp: Date.now()
         };
 
+        // Mesurer le temps de broadcast
+        const t0 = performance.now();
         this.broadcast(message);
+        const t1 = performance.now();
+        this.victoryBroadcastMs = parseFloat((t1 - t0).toFixed(3));
+
+        console.log(`⏱️  Broadcast victoire envoyé en ${this.victoryBroadcastMs}ms à ${this.clients.size} client(s)`);
     }
 
     /**
@@ -614,7 +622,8 @@ class GameServer {
             teamBGauge: this.state.teamB.gauge,
             playersList: this.getAllPlayers(),
             clickStats: { ...this.clickStats },
-            maxGauge: this.state.config.maxGauge
+            maxGauge: this.state.config.maxGauge,
+            victoryBroadcastMs: this.victoryBroadcastMs
         };
     }
 }

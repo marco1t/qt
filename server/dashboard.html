@@ -199,7 +199,7 @@
 
         .latency-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 15px;
             margin-bottom: 30px;
         }
@@ -323,6 +323,11 @@
                     <div class="latency-label">Clics Rejetés 👻</div>
                     <div class="latency-value" id="rejectedClicks" style="color: #e74c3c;">0</div>
                 </div>
+                <div class="latency-card" style="border-left-color: #9b59b6;">
+                    <div class="latency-label">⏱️ Broadcast Victoire</div>
+                    <div class="latency-value" id="broadcastTime" style="color: #9b59b6; font-size: 1.4em;">--</div>
+                    <div style="color: #666; font-size: 0.75em; margin-top: 2px;">Temps serveur → clients</div>
+                </div>
             </div>
         </div>
 
@@ -438,6 +443,16 @@
                 const phaseEl = document.getElementById('gamePhase');
                 phaseEl.textContent = data.phase;
                 phaseEl.style.color = data.phase === 'playing' ? '#2ecc71' : data.phase === 'victory' ? '#f39c12' : '#bdc3c7';
+            }
+
+            // Update Broadcast Timing
+            const btEl = document.getElementById('broadcastTime');
+            if (data.victoryBroadcastMs !== null && data.victoryBroadcastMs !== undefined) {
+                btEl.textContent = data.victoryBroadcastMs + ' ms';
+                btEl.style.color = data.victoryBroadcastMs < 5 ? '#2ecc71' : data.victoryBroadcastMs < 50 ? '#f39c12' : '#e74c3c';
+            } else {
+                btEl.textContent = '--';
+                btEl.style.color = '#9b59b6';
             }
 
             // Render Team Tables

@@ -71,7 +71,8 @@ setInterval(() => {
         playersList: stats.playersList,
         clickStats: stats.clickStats,
         maxGauge: stats.maxGauge,
-        phase: stats.phase
+        phase: stats.phase,
+        victoryBroadcastMs: stats.victoryBroadcastMs
     };
 
     // Envoyer à tous les dashboards connectés
