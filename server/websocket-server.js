@@ -66,9 +66,12 @@ setInterval(() => {
         mps: messagesPerSecond,
         memory: Math.round(used * 100) / 100,
         uptime: Math.floor((Date.now() - startTime) / 1000),
-        teamAConfig: stats.teamAGauge, // Détourné pour afficher répartition ou score
+        teamAConfig: stats.teamAGauge,
         teamBConfig: stats.teamBGauge,
-        playersList: stats.playersList
+        playersList: stats.playersList,
+        clickStats: stats.clickStats,
+        maxGauge: stats.maxGauge,
+        phase: stats.phase
     };
 
     // Envoyer à tous les dashboards connectés

@@ -199,7 +199,12 @@ class GameServer {
             if (this.victoryTime && (now - this.victoryTime) < this.LATENCY_WINDOW_MS) {
                 this.clickStats.total++;
                 this.clickStats.rejected++;
-                console.log(`🚫 Clic TARDIF rejeté (latence) - total rejetés: ${this.clickStats.rejected}`);
+                // Tracker par joueur
+                const latePlayer = this.getPlayer(playerId);
+                if (latePlayer) {
+                    latePlayer.rejectedClicks = (latePlayer.rejectedClicks || 0) + 1;
+                }
+                console.log(`🚫 Clic TARDIF rejeté (latence) de ${playerId} - total rejetés: ${this.clickStats.rejected}`);
             }
             return;
         }
@@ -224,6 +229,7 @@ class GameServer {
         if (teamData.gauge >= this.state.config.maxGauge) {
             // Jauge déjà pleine mais victoire pas encore déclarée (race condition)
             this.clickStats.rejected++;
+            player.rejectedClicks = (player.rejectedClicks || 0) + 1;
             return;
         }
 
@@ -605,9 +611,10 @@ class GameServer {
             clients: this.clients.size,
             players: this.getAllPlayers().length,
             teamAGauge: this.state.teamA.gauge,
-            teamAGauge: this.state.teamA.gauge,
             teamBGauge: this.state.teamB.gauge,
-            playersList: this.getAllPlayers()
+            playersList: this.getAllPlayers(),
+            clickStats: { ...this.clickStats },
+            maxGauge: this.state.config.maxGauge
         };
     }
 }

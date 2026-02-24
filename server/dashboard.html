@@ -197,13 +197,66 @@
             margin-bottom: 30px;
         }
 
+        .latency-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .latency-card {
+            background: linear-gradient(135deg, #2d2d2d 0%, #1a1a2e 100%);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border-left: 4px solid #555;
+        }
+
+        .latency-card.validated {
+            border-left-color: #2ecc71;
+        }
+
+        .latency-card.rejected {
+            border-left-color: #e74c3c;
+        }
+
+        .latency-card.total {
+            border-left-color: #3498db;
+        }
+
+        .latency-card.phase {
+            border-left-color: #f39c12;
+        }
+
+        .latency-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .latency-label {
+            color: #bdc3c7;
+            text-transform: uppercase;
+            font-size: 0.7em;
+            letter-spacing: 1px;
+        }
+
+        .rejected-cell {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        .rejected-row {
+            background-color: rgba(231, 76, 60, 0.1) !important;
+        }
+
         /* Responsive Breakpoints */
         @media (max-width: 900px) {
 
             .grid-charts,
-            .grid-details {
+            .grid-details,
+            .latency-grid {
                 grid-template-columns: 1fr;
-                /* Stack vertically on small screens */
             }
         }
     </style>
@@ -246,6 +299,29 @@
                 <div class="metric-label">Répartition Équipes</div>
                 <div class="chart-container">
                     <canvas id="teamChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Latency Stats Section -->
+        <div style="margin-bottom: 20px;">
+            <h3 style="color: #e74c3c; margin-bottom: 15px;">📡 Analyse Latence Réseau</h3>
+            <div class="latency-grid">
+                <div class="latency-card phase">
+                    <div class="latency-label">Phase</div>
+                    <div class="latency-value" id="gamePhase" style="color: #f39c12; font-size: 1.4em;">lobby</div>
+                </div>
+                <div class="latency-card total">
+                    <div class="latency-label">Total Clics Reçus</div>
+                    <div class="latency-value" id="totalClicks" style="color: #3498db;">0</div>
+                </div>
+                <div class="latency-card validated">
+                    <div class="latency-label">Clics Validés ✅</div>
+                    <div class="latency-value" id="validatedClicks" style="color: #2ecc71;">0</div>
+                </div>
+                <div class="latency-card rejected">
+                    <div class="latency-label">Clics Rejetés 👻</div>
+                    <div class="latency-value" id="rejectedClicks" style="color: #e74c3c;">0</div>
                 </div>
             </div>
         </div>
@@ -346,11 +422,23 @@
             // Update Load Chart
             loadChart.data.datasets[0].data.push(data.mps);
             loadChart.data.datasets[0].data.shift();
-            loadChart.update('none'); // Perf opt
+            loadChart.update('none');
 
             // Update Team Chart
             teamChart.data.datasets[0].data = [data.teamAConfig || 0, data.teamBConfig || 0];
             teamChart.update();
+
+            // Update Latency Stats
+            if (data.clickStats) {
+                document.getElementById('totalClicks').textContent = data.clickStats.total.toLocaleString();
+                document.getElementById('validatedClicks').textContent = data.clickStats.validated.toLocaleString();
+                document.getElementById('rejectedClicks').textContent = data.clickStats.rejected.toLocaleString();
+            }
+            if (data.phase) {
+                const phaseEl = document.getElementById('gamePhase');
+                phaseEl.textContent = data.phase;
+                phaseEl.style.color = data.phase === 'playing' ? '#2ecc71' : data.phase === 'victory' ? '#f39c12' : '#bdc3c7';
+            }
 
             // Render Team Tables
             renderTeamPanel('A', 'teamA-details');
@@ -382,6 +470,7 @@
                         <th>Nom</th>
                         <th>ID / Bot</th>
                         <th>Clics</th>
+                        <th style="color: #e74c3c">Rejetés</th>
                         <th>Détails</th>
                     </tr>
                 </thead>
@@ -399,11 +488,14 @@
                 const fullLogLength = history.length;
                 const displayStyle = openLogIds.has(logsId) ? 'block' : 'none';
                 const btnText = openLogIds.has(logsId) ? 'Masquer' : `Voir (${fullLogLength})`;
+                const rejected = p.rejectedClicks || 0;
+                const rowClass = rejected > 0 ? 'rejected-row' : '';
 
-                html += `<tr>
+                html += `<tr class="${rowClass}">
                     <td><strong>${p.name}</strong></td>
                     <td>${p.isBot ? '🤖 Bot' : p.id.substring(0, 8)}</td>
                     <td style="font-size: 1.1em; font-weight: bold">${p.score}</td>
+                    <td class="rejected-cell">${rejected > 0 ? '👻 ' + rejected : '—'}</td>
                     <td>
                         <button class="btn-small" onclick="toggleLogs('${logsId}')">
                             ${btnText}
