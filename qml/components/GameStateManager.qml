@@ -31,6 +31,12 @@ QtObject {
     property bool isConnected: false
     property bool isServer: false
 
+    // Statistiques de clics (peuplis par syncVictory depuis le serveur)
+    property int totalClicksServer: 0
+    property int validatedClicksServer: 0
+    property int rejectedClicksServer: 0
+    property int latencyWindowMs: 1000
+
     // Liste des joueurs du lobby (synchronisée depuis le serveur)
     property var lobbyPlayers: []
 
@@ -131,6 +137,17 @@ QtObject {
     function syncVictory(victoryMessage) {
         console.log("🏆 GameStateManager: Victory received via network");
         GameStateJS.syncVictory(victoryMessage);
+
+        // Récupérer les statistiques de latence envoyées par le serveur
+        if (victoryMessage.clickStats) {
+            totalClicksServer    = victoryMessage.clickStats.total    || 0;
+            validatedClicksServer = victoryMessage.clickStats.validated || 0;
+            rejectedClicksServer  = victoryMessage.clickStats.rejected  || 0;
+        }
+        if (victoryMessage.latencyWindowMs) {
+            latencyWindowMs = victoryMessage.latencyWindowMs;
+        }
+
         _syncFromJS();
     }
 
