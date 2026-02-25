@@ -65,6 +65,7 @@ if (args[0] === '--help' || args[0] === '-h') {
 let rougeBots = 0;
 let bleuBots = 0;
 let port = 7777;
+let host = 'localhost';
 let useNewFormat = false;
 
 for (let i = 0; i < args.length; i++) {
@@ -78,6 +79,9 @@ for (let i = 0; i < args.length; i++) {
         i++;
     } else if (args[i] === '--port' || args[i] === '-p') {
         port = parseInt(args[i + 1]) || 7777;
+        i++;
+    } else if (args[i] === '--host' || args[i] === '-H') {
+        host = args[i + 1] || 'localhost';
         i++;
     }
 }
@@ -109,7 +113,7 @@ if (!useNewFormat) {
 }
 
 const totalBots = rougeBots + bleuBots;
-const serverUrl = `ws://localhost:${port}`;
+const serverUrl = `ws://${host}:${port}`;
 
 console.log(`
 ╔══════════════════════════════════════════════════════════════╗
