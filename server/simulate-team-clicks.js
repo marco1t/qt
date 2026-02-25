@@ -15,8 +15,9 @@ const PORT = 7777;
 
 const args = process.argv.slice(2);
 if (args.length < 2) {
-    console.error("❌ Usage: node simulate-team-clicks.js <A|B|rouge|bleu> <NB_CLICS>");
-    console.error("   Ex: node simulate-team-clicks.js A 30000");
+    console.error("Usage: node simulate-team-clicks.js <A|B|rouge|bleu> <NB_CLICS> [host]");
+    console.error("   Ex local   : node simulate-team-clicks.js A 30000");
+    console.error("   Ex distant : node simulate-team-clicks.js A 30000 clickwars.ftp.sh");
     process.exit(1);
 }
 
@@ -31,6 +32,7 @@ if (targetTeam !== "A" && targetTeam !== "B") {
 }
 
 const totalClicks = parseInt(args[1]);
+const HOST = args[2] || 'localhost';
 if (isNaN(totalClicks) || totalClicks <= 0) {
     console.error("❌ Nombre de clics invalide.");
     process.exit(1);
@@ -39,7 +41,7 @@ if (isNaN(totalClicks) || totalClicks <= 0) {
 console.log(`\n🤖 Simulation : ${totalClicks.toLocaleString()} clics pour l'équipe ${targetTeam} (round-robin)`);
 console.log(`⚙  Batch : ${BATCH_SIZE} clics / ${BATCH_DELAY_MS}ms\n`);
 
-const ws = new WebSocket(`ws://localhost:${PORT}`);
+const ws = new WebSocket(`ws://${HOST}:${PORT}`);
 
 let bots = [];
 let sentTotal = 0;
