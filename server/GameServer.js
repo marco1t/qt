@@ -51,9 +51,12 @@ class GameServer {
         // Timestamp de la victoire (pour calculer la fenêtre de latence)
         this.victoryTime = null;
         // Durée pendant laquelle on accepte encore des clics "tardifs" à comptabiliser
-        this.LATENCY_WINDOW_MS = 1000;
+        this.LATENCY_WINDOW_MS = 5000; // 5s - fenêtre réaliste de latence réseau
         // Temps de broadcast de la victoire (ms)
         this.victoryBroadcastMs = null;
+
+        // Historique des joueurs déconnectés (pour le dashboard)
+        this.disconnectedPlayers = [];
     }
 
     /**
@@ -74,8 +77,16 @@ class GameServer {
     removeClient(clientId) {
         const client = this.clients.get(clientId);
         if (client && client.playerIds.length > 0) {
-            // Retirer TOUS les joueurs créés par ce client
+            // Sauvegarder les joueurs pour le dashboard avant suppression
             client.playerIds.forEach(playerId => {
+                const player = this.getPlayer(playerId);
+                if (player) {
+                    this.disconnectedPlayers.push({
+                        ...player,
+                        name: player.name + ' (déco)',
+                        disconnectedAt: Date.now()
+                    });
+                }
                 this.removePlayer(playerId);
                 console.log(`👤 GameServer: Joueur ${playerId} retiré (client déconnecté)`);
             });
@@ -206,7 +217,10 @@ class GameServer {
                 if (latePlayer) {
                     latePlayer.rejectedClicks = (latePlayer.rejectedClicks || 0) + 1;
                 }
-                console.log(`🚫 Clic TARDIF rejeté (latence) de ${playerId} - total rejetés: ${this.clickStats.rejected}`);
+                // Log seulement tous les 1000 clics rejetés pour éviter de saturer la mémoire
+                if (this.clickStats.rejected % 1000 === 0) {
+                    console.log(`🚫 ${this.clickStats.rejected} clics rejetés (latence) - dernier: ${playerId}`);
+                }
             }
             return;
         }
@@ -241,7 +255,10 @@ class GameServer {
 
         // Incrémenter le score du joueur
         player.score++;
-        player.clickHistory.push(now);
+        // Limiter l'historique pour éviter les fuites mémoire en stress test
+        if (player.clickHistory.length < 50) {
+            player.clickHistory.push(now);
+        }
 
         // ── Vérifier la victoire ─────────────────────────────────────────────
         const winner = this.checkVictory();
@@ -348,6 +365,7 @@ class GameServer {
         // Reset des compteurs de clics
         this.clickStats = { total: 0, validated: 0, rejected: 0 };
         this.victoryTime = null;
+        this.disconnectedPlayers = [];
 
         // Reset des scores
         this.getAllPlayers().forEach(player => {
@@ -614,13 +632,19 @@ class GameServer {
      * Retourne les statistiques du serveur
      */
     getStats() {
+        // Combiner joueurs actifs + déconnectés pour le dashboard
+        const allPlayersWithHistory = [
+            ...this.getAllPlayers(),
+            ...this.disconnectedPlayers
+        ];
+
         return {
             phase: this.state.phase,
             clients: this.clients.size,
             players: this.getAllPlayers().length,
             teamAGauge: this.state.teamA.gauge,
             teamBGauge: this.state.teamB.gauge,
-            playersList: this.getAllPlayers(),
+            playersList: allPlayersWithHistory,
             clickStats: { ...this.clickStats },
             maxGauge: this.state.config.maxGauge,
             victoryBroadcastMs: this.victoryBroadcastMs

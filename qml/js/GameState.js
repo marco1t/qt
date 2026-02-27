@@ -475,7 +475,8 @@ function syncFromServer(serverState) {
                     console.log("🔄 GameState: Correction équipe locale " + state.localPlayer.team + " -> " + p.team);
                     state.localPlayer.team = p.team;
                 }
-                state.localPlayer.isHost = p.isHost;
+                // NE PAS écraser isHost depuis le serveur (le serveur envoie toujours false)
+                // state.localPlayer.isHost est défini localement par setLocalPlayer()
                 state.localPlayer.score = p.score;
                 foundMe = true;
                 break;

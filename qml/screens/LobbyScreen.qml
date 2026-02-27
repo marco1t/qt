@@ -133,7 +133,7 @@ Rectangle {
                 TextField {
                     id: maxGaugeInput
                     visible: isHost
-                    text: globalGameState ? globalGameState.config.maxGauge.toString() : "100"
+                    text: globalGameState ? globalGameState.maxGauge.toString() : "100"
                     color: "white"
                     font.pixelSize: 20
                     font.bold: true
@@ -161,7 +161,7 @@ Rectangle {
                 // Pour les clients: Texte simple
                 Text {
                     visible: !isHost
-                    text: globalGameState ? globalGameState.config.maxGauge.toString() : "100"
+                    text: globalGameState ? globalGameState.maxGauge.toString() : "100"
                     color: "white"
                     font.pixelSize: 24
                     font.bold: true
