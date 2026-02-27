@@ -39,6 +39,21 @@ class GameServer {
         // Bot Loop
         this.botInterval = null;
         this.BOT_CLICK_RATE_MS = 1000; // Chaque bot tente de cliquer toutes les X ms
+
+        // ==========================================
+        // STATISTIQUES DE CLICS (pour la démo latence)
+        // ==========================================
+        // total    : tous les clics reçus pendant la partie
+        // validated: clics qui ont réellement incrémenté la jauge
+        // rejected : clics reçus APRÈS victoire (pendant la fenêtre de latence)
+        this.clickStats = { total: 0, validated: 0, rejected: 0 };
+
+        // Timestamp de la victoire (pour calculer la fenêtre de latence)
+        this.victoryTime = null;
+        // Durée pendant laquelle on accepte encore des clics "tardifs" à comptabiliser
+        this.LATENCY_WINDOW_MS = 1000;
+        // Temps de broadcast de la victoire (ms)
+        this.victoryBroadcastMs = null;
     }
 
     /**
@@ -170,40 +185,71 @@ class GameServer {
 
     /**
      * Gère un clic de joueur
+     *
+     * Logique de latence :
+     * - Phase "playing"  → clic validé (incrémente jauge)
+     * - Phase "victory" (dans la fenêtre de 1s) → clic rejeté mais COMPTÉ
+     * - Phase "victory" (après la fenêtre) → ignoré silencieusement
      */
     handleClick(clientId, message) {
         const { playerId } = message;
+        const now = Date.now();
 
-        // Vérifier que le jeu est en cours
+        // ── Phase VICTOIRE : fenêtre de latence ──────────────────────────────
+        if (this.state.phase === "victory") {
+            // On ne compte les clics tardifs que pendant la fenêtre de latence
+            if (this.victoryTime && (now - this.victoryTime) < this.LATENCY_WINDOW_MS) {
+                this.clickStats.total++;
+                this.clickStats.rejected++;
+                // Tracker par joueur
+                const latePlayer = this.getPlayer(playerId);
+                if (latePlayer) {
+                    latePlayer.rejectedClicks = (latePlayer.rejectedClicks || 0) + 1;
+                }
+                console.log(`🚫 Clic TARDIF rejeté (latence) de ${playerId} - total rejetés: ${this.clickStats.rejected}`);
+            }
+            return;
+        }
+
+        // ── Phase non "playing" (lobby, etc.) : ignorer ──────────────────────
         if (this.state.phase !== "playing") {
             return;
         }
 
-        // Trouver le joueur
+        // ── Trouver le joueur ────────────────────────────────────────────────
         const player = this.getPlayer(playerId);
         if (!player) {
             console.warn(`⚠️  GameServer: Joueur ${playerId} non trouvé`);
             return;
         }
 
-        // Vérifier si la jauge de son équipe est pleine
+        // ── Comptabiliser le clic total ──────────────────────────────────────
+        this.clickStats.total++;
+
+        // ── Vérifier si la jauge de son équipe est pleine ────────────────────
         const teamData = this.getTeamData(player.team);
         if (teamData.gauge >= this.state.config.maxGauge) {
-            return; // Jauge pleine, ignorer le clic
+            // Jauge déjà pleine mais victoire pas encore déclarée (race condition)
+            this.clickStats.rejected++;
+            player.rejectedClicks = (player.rejectedClicks || 0) + 1;
+            return;
         }
 
-        // Incrémenter la jauge
+        // ── Incrémenter la jauge (clic VALIDÉ) ──────────────────────────────
         teamData.gauge++;
+        this.clickStats.validated++;
 
         // Incrémenter le score du joueur
         player.score++;
-        player.clickHistory.push(Date.now());
+        player.clickHistory.push(now);
 
-        // Vérifier la victoire
+        // ── Vérifier la victoire ─────────────────────────────────────────────
         const winner = this.checkVictory();
         if (winner) {
             this.state.winner = winner;
             this.state.phase = "victory";
+            this.victoryTime = Date.now();  // Marquer le début de la fenêtre de latence
+            this.stopBotLoop();
             this.broadcastVictory(winner);
         } else {
             this.broadcastStateUpdate();
@@ -241,11 +287,10 @@ class GameServer {
         if (winner) {
             this.state.winner = winner;
             this.state.phase = "victory";
+            this.victoryTime = Date.now();  // Marquer le début de la fenêtre de latence
             this.stopBotLoop();
             this.broadcastVictory(winner);
         } else {
-            // On ne broadcast pas à chaque clic de bot pour ne pas spammer, 
-            // le broadcastStateUpdate régulier s'en charge via le tick des vrais joueurs ou un intervalle
             this.broadcastStateUpdate();
         }
     }
@@ -276,6 +321,10 @@ class GameServer {
         this.state.teamB.gauge = 0;
         this.state.winner = null;
 
+        // Reset des compteurs de clics
+        this.clickStats = { total: 0, validated: 0, rejected: 0 };
+        this.victoryTime = null;
+
         // Reset des scores
         this.getAllPlayers().forEach(player => {
             player.score = 0;
@@ -295,6 +344,10 @@ class GameServer {
         this.state.teamA.gauge = 0;
         this.state.teamB.gauge = 0;
         this.state.winner = null;
+
+        // Reset des compteurs de clics
+        this.clickStats = { total: 0, validated: 0, rejected: 0 };
+        this.victoryTime = null;
 
         // Reset des scores
         this.getAllPlayers().forEach(player => {
@@ -426,15 +479,29 @@ class GameServer {
      */
     broadcastVictory(winner) {
         console.log(`🏆 GameServer: Victoire équipe ${winner}!`);
+        console.log(`📊 Stats: ${this.clickStats.total} clics total | ${this.clickStats.validated} validés | ${this.clickStats.rejected} rejetés`);
 
         const message = {
             type: "victory",
             winner: winner,
             finalScores: this.getAllPlayers(),
+            // ── Statistiques de latence ──────────────────────────────────────
+            clickStats: {
+                total: this.clickStats.total,
+                validated: this.clickStats.validated,
+                rejected: this.clickStats.rejected
+            },
+            latencyWindowMs: this.LATENCY_WINDOW_MS,
             timestamp: Date.now()
         };
 
+        // Mesurer le temps de broadcast
+        const t0 = performance.now();
         this.broadcast(message);
+        const t1 = performance.now();
+        this.victoryBroadcastMs = parseFloat((t1 - t0).toFixed(3));
+
+        console.log(`⏱️  Broadcast victoire envoyé en ${this.victoryBroadcastMs}ms à ${this.clients.size} client(s)`);
     }
 
     /**
@@ -552,9 +619,11 @@ class GameServer {
             clients: this.clients.size,
             players: this.getAllPlayers().length,
             teamAGauge: this.state.teamA.gauge,
-            teamAGauge: this.state.teamA.gauge,
             teamBGauge: this.state.teamB.gauge,
-            playersList: this.getAllPlayers()
+            playersList: this.getAllPlayers(),
+            clickStats: { ...this.clickStats },
+            maxGauge: this.state.config.maxGauge,
+            victoryBroadcastMs: this.victoryBroadcastMs
         };
     }
 }

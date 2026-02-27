@@ -178,7 +178,7 @@ Rectangle {
         GaugeBar {
             id: gaugeA
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: Math.min(parent.width * 0.8, 500)
+            Layout.preferredWidth: Math.min(parent.width * 0.9, 500)
             Layout.preferredHeight: 60
 
             teamName: "Équipe A"
@@ -215,7 +215,7 @@ Rectangle {
         GaugeBar {
             id: gaugeB
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: Math.min(parent.width * 0.8, 500)
+            Layout.preferredWidth: Math.min(parent.width * 0.9, 500)
             Layout.preferredHeight: 60
 
             teamName: "Équipe B"
@@ -509,26 +509,47 @@ Rectangle {
                 }
             }
 
+            // ==========================================
+            // PANNEAU STATISTIQUES DE LATENCE
+            // ==========================================
+            LatencyStatsPanel {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: root.showVictory
+
+                // Clics locaux (compteurs de la ClickZone du joueur)
+                totalClicks:     clickZone.totalClicksLocal
+                validatedClicks: clickZone.validatedClicksLocal
+                // Prendre le max entre local et serveur (le serveur peut en avoir capté plus)
+                rejectedClicks: Math.max(
+                    clickZone.rejectedClicksLocal,
+                    gameState ? gameState.rejectedClicksServer : 0
+                )
+            }
+
             // Espace avant les boutons
             Item {
                 width: 1
                 height: 20
             }
 
+
             // Boutons
             AnimatedButton {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "🔄 Rejouer"
-                buttonColor: gameState && gameState.winner === "A" ? Theme.teamA : Theme.teamB
-                onClicked: {
-                    if (gameState) {
-                        clickZone.clickCount = 0;  // Reset le compteur de clics
-                        gameState.resetGame();
-                        // Redémarrer les bots après un délai
-                        botRestartTimer.start();
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: "🔄 Rejouer"
+                    buttonColor: gameState && gameState.winner === "A" ? Theme.teamA : Theme.teamB
+                    onClicked: {
+                        if (gameState) {
+                            clickZone.totalClicksLocal    = 0;
+                            clickZone.validatedClicksLocal = 0;
+                            clickZone.rejectedClicksLocal  = 0;
+                            clickZone.inLatencyWindow      = false;
+                            gameState.resetGame();
+                            // Redémarrer les bots après un délai
+                            botRestartTimer.start();
+                        }
                     }
                 }
-            }
 
             AnimatedButton {
                 anchors.horizontalCenter: parent.horizontalCenter

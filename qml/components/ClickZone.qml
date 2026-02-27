@@ -30,8 +30,18 @@ Rectangle {
     // Zone active ou non
     property bool clickEnabled: true
 
-    // Compteur de clics du joueur
-    property int clickCount: 0
+    // ==========================================
+    // COMPTEURS DE CLICS (démo latence)
+    // ==========================================
+    // Alias pratique pour la compat. avec GameScreen.qml existant
+    property int clickCount: validatedClicksLocal
+
+    // Clics tentés au total (bouton appuyé)
+    property int totalClicksLocal: 0
+    // Clics qui ont bien incrémenté la jauge
+    property int validatedClicksLocal: 0
+    // Clics « dans le vide » (après victoire, pendant la latence)
+    property int rejectedClicksLocal: 0
 
     // Référence au GameState (passé par le parent)
     property var gameState: null
@@ -46,11 +56,21 @@ Rectangle {
     property string localPlayerId: ""
 
     // ==========================================
+    // FENÊTRE DE LATENCE
+    // ==========================================
+    // Durée pendant laquelle on reste à l'écoute des clics après victoire
+    property int latencyWindowMs: 1000
+    // true = on est en train de vivre la seconde de latence
+    property bool inLatencyWindow: false
+
+    // ==========================================
     // SIGNAUX
     // ==========================================
 
     signal clicked(real x, real y)
     signal clickRejected
+    // Émis quand un clic arrive pendant la fenêtre de latence (trop tard !)
+    signal clickLate
 
     // ==========================================
     // APPARENCE
@@ -150,6 +170,36 @@ Rectangle {
     // INTERACTION
     // ==========================================
 
+    // ==========================================
+    // TIMER : FENÊTRE DE LATENCE
+    // ==========================================
+    // Reste actif 1s après la victoire pour capter les clics tardifs
+    Timer {
+        id: latencyWindowTimer
+        interval: clickZone.latencyWindowMs
+        repeat: false
+        onTriggered: {
+            clickZone.inLatencyWindow = false;
+            mouseArea.enabled = false;  // On coupe vraiment l'interaction
+            console.log("ClickZone: Fenêtre de latence terminée ("
+                        + clickZone.rejectedClicksLocal + " clics dans le vide)");
+        }
+    }
+
+    // Réagir aux changements de phase du jeu
+    Connections {
+        target: gameState
+        function onPhaseChanged() {
+            if (gameState && gameState.phase === "victory") {
+                // Ouvrir la fenêtre de latence : on garde le MouseArea actif
+                clickZone.inLatencyWindow = true;
+                mouseArea.enabled = true;   // Garder actif pour capter les clics tardifs
+                latencyWindowTimer.restart();
+                console.log("ClickZone: Victoire détectée — fenêtre latence ouverte");
+            }
+        }
+    }
+
     MouseArea {
         id: mouseArea
         anchors.fill: parent
@@ -162,47 +212,52 @@ Rectangle {
 
     // Gestion du clic
     function handleClick(x, y) {
-        if (!clickEnabled) {
-            clickRejected();
-            return;
-        }
-
         if (!gameState) {
             console.warn("ClickZone: gameState non défini");
             return;
         }
 
-        // Mode réseau : envoyer au serveur
+        totalClicksLocal++;
+
+        // ── CAS 1 : clic pendant la fenêtre de latence (partie terminée) ────
+        if (inLatencyWindow || (gameState && gameState.phase === "victory")) {
+            rejectedClicksLocal++;
+            clickLate();
+            lateAnimation.start();
+            console.log("ClickZone: Clic TARDIF #" + rejectedClicksLocal + " — dans le vide !");
+            return;
+        }
+
+        // ── CAS 2 : zone désactivée ──────────────────────────────────────────
+        if (!clickEnabled) {
+            clickRejected();
+            return;
+        }
+
+        // ── CAS 3 : mode réseau ──────────────────────────────────────────────
         if (network && network.isConnected && localPlayerId) {
             network.sendClick(localPlayerId);
 
             // Feedback optimiste immédiat (avant confirmation serveur)
-            clickCount++;
+            validatedClicksLocal++;
             bounceAnimation.start();
             clicked(x, y);
 
-            console.log("Click #" + clickCount + " envoyé au serveur");
-        } else
-        // Mode local : incrémenter directement
-        {
+            console.log("Click #" + validatedClicksLocal + " envoyé au serveur");
+        } else {
+            // ── CAS 4 : mode local ───────────────────────────────────────────
             var success = gameState.incrementGauge(playerTeam);
 
             if (success) {
-                // Incrémenter le compteur local
-                clickCount++;
-
-                // Lancer l'animation de feedback
+                validatedClicksLocal++;
                 bounceAnimation.start();
-
-                // Émettre le signal avec les coordonnées
                 clicked(x, y);
-
-                // Log pour debug
-                console.log("Click #" + clickCount + " pour équipe " + playerTeam);
+                console.log("Click #" + validatedClicksLocal + " pour équipe " + playerTeam);
             } else {
-                // Jauge pleine ou partie terminée
-                clickRejected();
-                rejectAnimation.start();
+                // Jauge pleine (victoire pas encore propagée → traiter comme tardif)
+                rejectedClicksLocal++;
+                clickLate();
+                lateAnimation.start();
             }
         }
     }
@@ -249,11 +304,91 @@ Rectangle {
         }
     }
 
+    // ==========================================
+    // ANIMATION "TROP TARD !" (clic pendant latence)
+    // ==========================================
+    // Flash orange vif + secousse pour rendre tangible la latence
+    SequentialAnimation {
+        id: lateAnimation
+
+        // 1. Flash orange immédiat
+        ColorAnimation {
+            target: clickZone
+            property: "color"
+            to: "#FF6600"
+            duration: 60
+        }
+        // 2. Petite secousse scale
+        NumberAnimation {
+            target: clickZone
+            property: "scale"
+            to: 0.90
+            duration: 60
+            easing.type: Easing.OutBack
+        }
+        NumberAnimation {
+            target: clickZone
+            property: "scale"
+            to: 1.05
+            duration: 80
+            easing.type: Easing.InOutQuad
+        }
+        NumberAnimation {
+            target: clickZone
+            property: "scale"
+            to: 1.0
+            duration: 100
+            easing.type: Easing.InOutQuad
+        }
+        // 3. Retour couleur normale
+        ColorAnimation {
+            target: clickZone
+            property: "color"
+            to: clickZone.teamColor
+            duration: 200
+        }
+    }
+
+    // Label "TROP TARD !" qui apparaît brièvement au-dessus du bouton
+    Text {
+        id: lateLabelText
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.top
+        anchors.bottomMargin: 8
+        text: "✋ TROP TARD !"
+        color: "#FF6600"
+        font.pixelSize: 18
+        font.bold: true
+        opacity: 0
+        z: 10
+
+        SequentialAnimation {
+            id: lateLabelAnimation
+            running: lateAnimation.running
+
+            NumberAnimation {
+                target: lateLabelText
+                property: "opacity"
+                from: 0
+                to: 1.0
+                duration: 80
+            }
+            PauseAnimation { duration: 500 }
+            NumberAnimation {
+                target: lateLabelText
+                property: "opacity"
+                from: 1.0
+                to: 0
+                duration: 250
+            }
+        }
+    }
+
     // Animation idle (pulsation douce quand pas de clic)
     SequentialAnimation on scale {
         id: idleAnimation
         loops: Animation.Infinite
-        running: !bounceAnimation.running
+        running: !bounceAnimation.running && !lateAnimation.running
 
         NumberAnimation {
             to: 1.03

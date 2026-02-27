@@ -62,6 +62,7 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
 const teamArg = args[0].toLowerCase();
 const clickCount = parseInt(args[1]) || 100;
 const port = parseInt(args[2]) || 7777;
+const host = args[3] || 'localhost';
 
 // Déterminer l'équipe (A ou B)
 let team;
@@ -76,7 +77,7 @@ if (teamArg === 'rouge' || teamArg === 'red' || teamArg === 'a') {
 }
 
 const teamName = team === 'A' ? 'ROUGE' : 'BLEUE';
-const serverUrl = `ws://localhost:${port}`;
+const serverUrl = `ws://${host}:${port}`;
 
 console.log(`
 ╔══════════════════════════════════════════════════════════════╗

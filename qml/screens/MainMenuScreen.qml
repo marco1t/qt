@@ -41,14 +41,14 @@ Rectangle {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "⚔️"
-                font.pixelSize: 64
+                font.pixelSize: Math.max(32, Math.min(64, parent.width * 0.1))
             }
 
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "CLICKWARS"
                 color: Theme.textPrimary
-                font.pixelSize: 64
+                font.pixelSize: Math.max(32, Math.min(64, parent.width * 0.1))
                 font.bold: true
                 font.letterSpacing: 4
 
@@ -71,7 +71,7 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "TERRITORY"
                 color: Theme.teamA
-                font.pixelSize: 32
+                font.pixelSize: Math.max(18, Math.min(32, parent.width * 0.05))
                 font.bold: true
                 font.letterSpacing: 8
             }
@@ -80,9 +80,12 @@ Rectangle {
                 anchors.horizontalCenter: parent.horizontalCenter
                 text: "Cliquez ensemble, conquérez ensemble !"
                 color: Theme.textSecondary
-                font.pixelSize: 18
+                font.pixelSize: Math.max(12, Math.min(18, parent.width * 0.03))
                 font.italic: true
                 topPadding: 16
+                width: parent.width * 0.9
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
             }
         }
 
@@ -97,7 +100,7 @@ Rectangle {
             spacing: 16
 
             AnimatedButton {
-                Layout.preferredWidth: 280
+                Layout.preferredWidth: Math.min(280, root.width * 0.8)
                 Layout.preferredHeight: 56
                 text: "Créer Partie"
                 buttonColor: Theme.teamA
@@ -105,7 +108,7 @@ Rectangle {
             }
 
             AnimatedButton {
-                Layout.preferredWidth: 280
+                Layout.preferredWidth: Math.min(280, root.width * 0.8)
                 Layout.preferredHeight: 56
                 text: "Rejoindre Partie"
                 buttonColor: Theme.teamB
@@ -117,7 +120,7 @@ Rectangle {
             }
 
             AnimatedButton {
-                Layout.preferredWidth: 280
+                Layout.preferredWidth: Math.min(280, root.width * 0.8)
                 Layout.preferredHeight: 48
                 text: "🌐 Test Réseau (Debug)"
                 buttonColor: "#9b59b6"
@@ -129,7 +132,7 @@ Rectangle {
             }
 
             AnimatedButton {
-                Layout.preferredWidth: 280
+                Layout.preferredWidth: Math.min(280, root.width * 0.8)
                 Layout.preferredHeight: 56
                 text: "Quitter"
                 buttonColor: Theme.buttonDefault
@@ -144,6 +147,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: 6
+        visible: parent.width > 400
         gradient: Gradient {
             GradientStop {
                 position: 0.0
@@ -161,6 +165,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         width: 6
+        visible: parent.width > 400
         gradient: Gradient {
             GradientStop {
                 position: 0.0
