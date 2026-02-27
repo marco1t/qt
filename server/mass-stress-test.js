@@ -280,15 +280,9 @@ function stopTest() {
 
     // Top 10 bots
     const sorted = bots.sort((a, b) => b.clicksSent - a.clicksSent).slice(0, 10);
-    console.log('🏆 Top 10 bots (Performances) :');
+    console.log('🏆 Top 10 bots :');
     sorted.forEach((bot, i) => {
-        // Calcul du nombre de clics réels générés par milliseconde
-        // elapsed = durée totale en secondes
-        // On cherche le nombre de clics par tranche de 2ms
-        const totalMs = elapsed * 1000;
-        const clicksPer2ms = elapsed > 0 ? ((bot.clicksSent / totalMs) * 2).toFixed(2) : 0;
-
-        console.log(`  ${i + 1}. ${bot.name} (${bot.team}) → ${bot.clicksSent.toLocaleString()} clics totaux (${clicksPer2ms} clics env./2ms)`);
+        console.log(`  ${i + 1}. ${bot.name} (${bot.team}) → ${bot.clicksSent.toLocaleString()} clics`);
     });
     console.log('');
 
