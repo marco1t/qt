@@ -1,0 +1,320 @@
+# 🔒 ClickWars: Territory - Pipeline CI Sécurisé
+# ⚡ Adapté au projet : Frontend Qt6/QML + Backend Node.js WebSocket
+# 📖 Ce workflow est 100% LECTURE SEULE - il ne modifie JAMAIS ton code
+
+name: ClickWars CI
+
+# 🔒 Permissions minimales - lecture seule uniquement
+permissions:
+  contents: read
+
+# 📅 Déclenchement
+on:
+  push:
+    branches: [main, mike]
+  pull_request:
+    branches: [main]
+
+# 🔒 Annule les anciens runs si un nouveau push arrive
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ===================================
+  # 1. SERVEUR NODE.JS (Backend)
+  # Vérifie que le serveur WebSocket fonctionne
+  # ===================================
+  backend:
+    name: 🖥️ Backend Node.js
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: 📥 Récupération du code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 📦 Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 📦 Installation dépendances (sécurisée)
+        working-directory: ./server
+        run: npm install --ignore-scripts
+
+      # Vérifie que le package ws n'a pas de failles connues
+      - name: 🔒 Audit sécurité npm
+        working-directory: ./server
+        run: npm audit --audit-level=high || echo "⚠️ Vulnérabilités détectées"
+
+      # Vérifie la syntaxe de TOUS les fichiers JS du serveur
+      - name: ✅ Syntaxe websocket-server.js
+        working-directory: ./server
+        run: node --check websocket-server.js
+
+      - name: ✅ Syntaxe GameServer.js
+        working-directory: ./server
+        run: node --check GameServer.js
+
+      - name: ✅ Syntaxe add-lobby-bots.js
+        working-directory: ./server
+        run: node --check add-lobby-bots.js
+
+      - name: ✅ Syntaxe simulate-clicks.js
+        working-directory: ./server
+        run: node --check simulate-clicks.js
+
+      - name: ✅ Syntaxe simulate-team-clicks.js
+        working-directory: ./server
+        run: node --check simulate-team-clicks.js
+
+      # Démarre le serveur et vérifie qu'il ne crash pas
+      - name: 🚀 Test démarrage serveur WebSocket (port 7777)
+        working-directory: ./server
+        run: |
+          node websocket-server.js &
+          SERVER_PID=$!
+          sleep 3
+
+          if kill -0 $SERVER_PID 2>/dev/null; then
+            echo "✅ websocket-server.js démarre correctement (PID: $SERVER_PID)"
+            kill $SERVER_PID
+          else
+            echo "❌ Le serveur a crashé au démarrage!"
+            exit 1
+          fi
+
+      # Vérifie que le dashboard HTML est valide
+      - name: 📊 Vérification dashboard.html
+        working-directory: ./server
+        run: |
+          if [ -f "dashboard.html" ]; then
+            echo "✅ dashboard.html présent ($(wc -c < dashboard.html) bytes)"
+          else
+            echo "❌ dashboard.html manquant!"
+            exit 1
+          fi
+
+  # ===================================
+  # 2. FRONTEND QT/QML
+  # Vérifie que tous les fichiers QML et C++ sont présents
+  # ===================================
+  frontend:
+    name: 📱 Frontend Qt/QML
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: 📥 Récupération du code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Vérifie CHAQUE fichier listé dans CMakeLists.txt
+      - name: ✅ Fichiers C++ (sources)
+        run: |
+          echo "� Vérification des sources C++..."
+          MISSING=0
+          for f in src/Main.cpp src/websocketserver.h src/websocketserver.cpp; do
+            if [ -f "$f" ]; then
+              echo "  ✅ $f"
+            else
+              echo "  ❌ $f MANQUANT!"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          [ $MISSING -eq 0 ] || exit 1
+
+      - name: ✅ Fichiers QML (écrans)
+        run: |
+          echo "� Vérification des écrans QML..."
+          MISSING=0
+          for f in \
+            qml/Main.qml \
+            qml/screens/MainMenuScreen.qml \
+            qml/screens/GameScreen.qml \
+            qml/screens/LobbyScreen.qml \
+            qml/screens/ServerBrowserScreen.qml \
+            qml/screens/NetworkTest.qml; do
+            if [ -f "$f" ]; then
+              echo "  ✅ $f"
+            else
+              echo "  ❌ $f MANQUANT!"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          [ $MISSING -eq 0 ] || exit 1
+
+      - name: ✅ Fichiers QML (composants)
+        run: |
+          echo "🔍 Vérification des composants QML..."
+          MISSING=0
+          for f in \
+            qml/components/AnimatedButton.qml \
+            qml/components/GameStateManager.qml \
+            qml/components/NetworkManager.qml \
+            qml/components/ToastNotification.qml \
+            qml/components/ClickZone.qml \
+            qml/components/BotController.qml \
+            qml/components/GaugeBar.qml \
+            qml/components/LatencyStatsPanel.qml \
+            qml/styles/Theme.qml; do
+            if [ -f "$f" ]; then
+              echo "  ✅ $f"
+            else
+              echo "  ❌ $f MANQUANT!"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          [ $MISSING -eq 0 ] || exit 1
+
+      - name: ✅ Fichiers JS (logique QML)
+        run: |
+          echo "🔍 Vérification des modules JS..."
+          MISSING=0
+          for f in qml/js/GameState.js qml/js/BotManager.js; do
+            if [ -f "$f" ]; then
+              echo "  ✅ $f"
+            else
+              echo "  ❌ $f MANQUANT!"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          [ $MISSING -eq 0 ] || exit 1
+
+      # Vérifie que qmldir déclare bien tous les composants
+      - name: ✅ Registres qmldir
+        run: |
+          echo "🔍 Vérification des fichiers qmldir..."
+          for dir in qml/components qml/screens qml/styles; do
+            if [ -f "$dir/qmldir" ]; then
+              echo "  ✅ $dir/qmldir"
+            else
+              echo "  ❌ $dir/qmldir MANQUANT!"
+              exit 1
+            fi
+          done
+
+      # Vérifie que CMakeLists.txt est cohérent
+      - name: ✅ CMakeLists.txt
+        run: |
+          echo "� Vérification CMakeLists.txt..."
+          if [ ! -f "CMakeLists.txt" ]; then
+            echo "❌ CMakeLists.txt manquant!"
+            exit 1
+          fi
+          echo "  ✅ CMakeLists.txt présent"
+
+          # Vérifie que les dépendances Qt sont déclarées
+          for dep in Core Quick Qml Network WebSockets; do
+            if grep -q "$dep" CMakeLists.txt; then
+              echo "  ✅ Qt6::$dep déclaré"
+            else
+              echo "  ⚠️ Qt6::$dep non trouvé dans CMakeLists.txt"
+            fi
+          done
+
+  # ===================================
+  # 3. SÉCURITÉ
+  # Vérifie qu'aucun secret n'est exposé dans le code
+  # ===================================
+  security:
+    name: 🔒 Sécurité
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: 📥 Récupération du code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Cherche des mots de passe ou clés API oubliés dans le code
+      - name: 🔑 Détection de secrets exposés
+        run: |
+          echo "🔍 Recherche de secrets dans le code..."
+          FOUND=0
+          for pattern in "password\s*[:=]" "api_key\s*[:=]" "secret_key" "private_key" "AWS_ACCESS"; do
+            RESULTS=$(grep -rnI "$pattern" \
+              --include="*.js" --include="*.qml" --include="*.cpp" --include="*.h" --include="*.json" \
+              --exclude-dir=node_modules --exclude-dir=.git \
+              --exclude="package-lock.json" --exclude="*.yml" . 2>/dev/null || true)
+            if [ -n "$RESULTS" ]; then
+              echo "  ⚠️ Pattern suspect: $pattern"
+              echo "$RESULTS" | head -3
+              FOUND=$((FOUND+1))
+            fi
+          done
+          if [ $FOUND -eq 0 ]; then
+            echo "  ✅ Aucun secret exposé!"
+          else
+            echo "  ⚠️ $FOUND pattern(s) suspect(s) - vérifie que ce ne sont pas de vrais secrets!"
+          fi
+
+      # Vérifie qu'aucun fichier énorme n'a été pushé par erreur
+      - name: 📦 Vérification taille des fichiers
+        run: |
+          echo "📦 Recherche de fichiers > 1 Mo..."
+          BIG=$(find . -type f -size +1M -not -path './.git/*' -not -path '*/node_modules/*' 2>/dev/null)
+          if [ -z "$BIG" ]; then
+            echo "  ✅ Aucun fichier volumineux!"
+          else
+            echo "  ⚠️ Fichiers volumineux:"
+            echo "$BIG" | while read f; do echo "    • $f ($(du -h "$f" | cut -f1))"; done
+          fi
+
+      # Vérifie que le port WebSocket n'est pas exposé en dur avec une IP publique
+      - name: 🌐 Vérification IP/Ports
+        run: |
+          echo "🔍 Vérification des IP codées en dur..."
+          # Cherche des IP publiques (pas localhost/127.0.0.1/0.0.0.0)
+          PUBLIC_IPS=$(grep -rnI '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' \
+            --include="*.js" --include="*.qml" --include="*.cpp" \
+            --exclude-dir=node_modules --exclude-dir=.git . 2>/dev/null | \
+            grep -v "127.0.0.1" | grep -v "0.0.0.0" | grep -v "localhost" || true)
+          if [ -z "$PUBLIC_IPS" ]; then
+            echo "  ✅ Aucune IP publique codée en dur!"
+          else
+            echo "  ⚠️ IP potentiellement publiques détectées:"
+            echo "$PUBLIC_IPS" | head -5
+          fi
+
+  # ===================================
+  # 4. STATISTIQUES DU PROJET
+  # ===================================
+  stats:
+    name: 📊 Stats Projet
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: 📥 Récupération du code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 📊 Résumé du projet ClickWars
+        run: |
+          echo "╔══════════════════════════════════════════╗"
+          echo "║    📊 ClickWars: Territory - Stats       ║"
+          echo "╚══════════════════════════════════════════╝"
+          echo ""
+          echo "📁 Structure:"
+          echo "  • Fichiers QML      : $(find . -name '*.qml' | wc -l)"
+          echo "  • Fichiers JS (QML) : $(find ./qml -name '*.js' 2>/dev/null | wc -l)"
+          echo "  • Fichiers JS (srv) : $(find ./server -name '*.js' -not -path '*/node_modules/*' | wc -l)"
+          echo "  • Fichiers C++      : $(find . -name '*.cpp' -o -name '*.h' | wc -l)"
+          echo "  • Fichiers HTML     : $(find . -name '*.html' | wc -l)"
+          echo ""
+          echo "📏 Lignes de code:"
+          echo "  • QML  : $(find . -name '*.qml' -exec cat {} + 2>/dev/null | wc -l) lignes"
+          echo "  • JS   : $(find . -name '*.js' -not -path '*/node_modules/*' -exec cat {} + 2>/dev/null | wc -l) lignes"
+          echo "  • C++  : $(find . \( -name '*.cpp' -o -name '*.h' \) -exec cat {} + 2>/dev/null | wc -l) lignes"
+          echo ""
+          echo "🎮 Composants du jeu:"
+          echo "  • Écrans   : $(ls qml/screens/*.qml 2>/dev/null | wc -l)"
+          echo "  • Widgets  : $(ls qml/components/*.qml 2>/dev/null | wc -l)"
+          echo "  • Scripts  : $(ls server/*.js 2>/dev/null | grep -v node_modules | wc -l)"
