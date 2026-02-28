@@ -71,6 +71,10 @@ jobs:
         working-directory: ./server
         run: node --check simulate-team-clicks.js
 
+      - name: ✅ Lancer les tests unitaires
+        working-directory: ./server
+        run: node tests.js
+
       # Démarre le serveur et vérifie qu'il ne crash pas
       - name: 🚀 Test démarrage serveur WebSocket (port 7777)
         working-directory: ./server

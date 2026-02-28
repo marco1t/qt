@@ -550,7 +550,7 @@ class GameServer {
         //    return;
         // } -- LIMIT REMOVED
 
-        const botId = "bot_" + Date.now();
+        const botId = "bot_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
         const botName = name || "Bot " + (this.getAllPlayers().length + 1);
         const botTeam = team || (this.state.teamA.players.length <= this.state.teamB.players.length ? "A" : "B");
 
@@ -559,7 +559,6 @@ class GameServer {
             name: botName,
             team: botTeam,
             score: 0,
-            isBot: true,
             isBot: true,
             isHost: false,
             clickHistory: []
