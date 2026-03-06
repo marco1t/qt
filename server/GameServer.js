@@ -55,6 +55,9 @@ class GameServer {
         // Temps de broadcast de la victoire (ms)
         this.victoryBroadcastMs = null;
 
+        // Compteur pour IDs uniques de bots
+        this.botCounter = 0;
+
         // Historique des joueurs déconnectés (pour le dashboard)
         this.disconnectedPlayers = [];
     }
@@ -166,8 +169,7 @@ class GameServer {
             team: assignedTeam,
             score: 0,
             isBot: false,
-            isBot: false,
-            isHost: false, // Sera mis à jour si nécessaire
+            isHost: false,
             clickHistory: [] // Historique des timestamps de clics
         };
 
@@ -550,7 +552,7 @@ class GameServer {
         //    return;
         // } -- LIMIT REMOVED
 
-        const botId = "bot_" + Date.now();
+        const botId = "bot_" + (++this.botCounter) + "_" + Date.now();
         const botName = name || "Bot " + (this.getAllPlayers().length + 1);
         const botTeam = team || (this.state.teamA.players.length <= this.state.teamB.players.length ? "A" : "B");
 
@@ -559,7 +561,6 @@ class GameServer {
             name: botName,
             team: botTeam,
             score: 0,
-            isBot: true,
             isBot: true,
             isHost: false,
             clickHistory: []

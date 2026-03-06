@@ -1,7 +1,7 @@
 /**
- * NetworkTest.qml - Test du NetworkManager
+ * NetworkTest.qml - Test du NetworkManager (Debug)
  *
- * Permet de tester la connexion client-serveur en mode debug.
+ * Permet de tester la connexion client-serveur.
  */
 
 import QtQuick
@@ -16,28 +16,18 @@ Rectangle {
     anchors.fill: parent
     color: Theme.backgroundDark
 
-    // Toast local pour cet écran
     ToastNotification {
         id: localToast
         z: 1000
     }
 
-    property bool isServerMode: false
-
-    // Référence au NetworkManager global (passé par Main.qml)
     property var networkManager: null
 
-    // Connections pour logger les événements
     Connections {
         target: networkManager
 
-        function onConnected() {
-            logMessage("✅ Connecté au serveur");
-        }
-
-        function onDisconnected() {
-            logMessage("🔌 Déconnecté du serveur");
-        }
+        function onConnected() { logMessage("✅ Connecté au serveur") }
+        function onDisconnected() { logMessage("🔌 Déconnecté du serveur") }
 
         function onConnectionError(error) {
             logMessage("❌ Erreur: " + error);
@@ -46,8 +36,6 @@ Rectangle {
 
         function onMessageReceived(senderId, message) {
             logMessage("📨 Message de " + senderId + ": " + JSON.stringify(message));
-
-            // Afficher toast pour player_left
             if (message.type === "player_left") {
                 localToast.showPlayerLeft(message.playerName || message.playerId);
             }
@@ -56,11 +44,7 @@ Rectangle {
 
     function logMessage(msg) {
         var timestamp = Qt.formatTime(new Date(), "hh:mm:ss");
-        logModel.append({
-            text: "[" + timestamp + "] " + msg
-        });
-
-        // Auto-scroll
+        logModel.append({ text: "[" + timestamp + "] " + msg });
         logView.positionViewAtEnd();
     }
 
@@ -69,7 +53,6 @@ Rectangle {
         anchors.margins: 20
         spacing: 10
 
-        // Titre
         Text {
             text: "🌐 Network Manager Test"
             font.pixelSize: 28
@@ -78,99 +61,8 @@ Rectangle {
             Layout.alignment: Qt.AlignHCenter
         }
 
-        // Mode sélection
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 10
-
-            AnimatedButton {
-                text: "Mode Serveur"
-                buttonColor: isServerMode ? Theme.teamA : Theme.buttonDefault
-                Layout.fillWidth: true
-                onClicked: {
-                    root.isServerMode = true;
-                }
-            }
-
-            AnimatedButton {
-                text: "Mode Client"
-                buttonColor: !isServerMode ? Theme.teamB : Theme.buttonDefault
-                Layout.fillWidth: true
-                onClicked: {
-                    root.isServerMode = false;
-                }
-            }
-        }
-
-        // Zone serveur
+        // Contrôles Client
         Rectangle {
-            visible: isServerMode
-            Layout.fillWidth: true
-            Layout.preferredHeight: 150
-            color: Qt.rgba(0, 0, 0, 0.3)
-            radius: 10
-
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 15
-                spacing: 10
-
-                Text {
-                    text: "🖥️ Contrôles Serveur"
-                    font.pixelSize: 18
-                    font.bold: true
-                    color: Theme.teamA
-                }
-
-                RowLayout {
-                    spacing: 10
-
-                    TextField {
-                        id: serverPortField
-                        placeholderText: "Port (défaut: 7777)"
-                        text: "7777"
-                        Layout.preferredWidth: 150
-                    }
-
-                    AnimatedButton {
-                        text: networkManager.isServer ? "Arrêter Serveur" : "Démarrer Serveur"
-                        buttonColor: networkManager.isServer ? "#e74c3c" : Theme.teamA
-                        onClicked: {
-                            if (networkManager.isServer) {
-                                networkManager.stopServer();
-                            } else {
-                                var port = parseInt(serverPortField.text) || 7777;
-                                networkManager.startServer(port);
-                            }
-                        }
-                    }
-                }
-
-                Text {
-                    text: "Clients connectés: " + networkManager.connectedClients.length
-                    color: Theme.textSecondary
-                    font.pixelSize: 14
-                }
-
-                AnimatedButton {
-                    text: "📤 Envoyer message à tous"
-                    enabled: networkManager.isServer && networkManager.connectedClients.length > 0
-                    buttonColor: Theme.teamA
-                    onClicked: {
-                        networkManager.sendToAll({
-                            type: "test",
-                            message: "Hello from server!",
-                            timestamp: Date.now()
-                        });
-                        logMessage("📤 Message envoyé à tous les clients");
-                    }
-                }
-            }
-        }
-
-        // Zone client
-        Rectangle {
-            visible: !isServerMode
             Layout.fillWidth: true
             Layout.preferredHeight: 150
             color: Qt.rgba(0, 0, 0, 0.3)
@@ -221,7 +113,7 @@ Rectangle {
 
                 AnimatedButton {
                     text: "📤 Envoyer message au serveur"
-                    enabled: networkManager.isConnected
+                    buttonEnabled: networkManager.isConnected
                     buttonColor: Theme.teamB
                     onClicked: {
                         networkManager.sendToServer({
@@ -233,7 +125,6 @@ Rectangle {
                     }
                 }
 
-                // Nouveaux boutons de test pour la synchronisation
                 Text {
                     text: "🎮 Tests de Synchronisation"
                     color: "#FFD700"
@@ -252,9 +143,6 @@ Rectangle {
                         buttonColor: Theme.teamA
                         Layout.fillWidth: true
                         onClicked: {
-                            console.log("🔴 BOUTON JOIN A CLIQUÉ !");
-                            console.log("networkManager:", networkManager);
-                            console.log("networkManager.isConnected:", networkManager.isConnected);
                             networkManager.joinGame("p1", "TestPlayer", "A");
                             logMessage("📤 player_join envoyé (Team A)");
                         }
@@ -266,7 +154,6 @@ Rectangle {
                         buttonColor: Theme.teamB
                         Layout.fillWidth: true
                         onClicked: {
-                            console.log("🔵 BOUTON JOIN B CLIQUÉ !");
                             networkManager.joinGame("p2", "TestPlayer2", "B");
                             logMessage("📤 player_join envoyé (Team B)");
                         }
@@ -326,8 +213,7 @@ Rectangle {
         // Console de logs
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 100  // Hauteur réduite pour ne pas bloquer les boutons
-            Layout.maximumHeight: 100
+            Layout.fillHeight: true
             color: Qt.rgba(0, 0, 0, 0.5)
             radius: 10
 
@@ -349,9 +235,7 @@ Rectangle {
                     Layout.fillHeight: true
                     clip: true
 
-                    model: ListModel {
-                        id: logModel
-                    }
+                    model: ListModel { id: logModel }
 
                     delegate: Text {
                         text: model.text
@@ -370,33 +254,9 @@ Rectangle {
                     Layout.alignment: Qt.AlignRight
 
                     AnimatedButton {
-                        text: "📋 Copier"
-                        buttonColor: "#3498db"
-                        onClicked: {
-                            var allLogs = "";
-                            for (var i = 0; i < logModel.count; i++) {
-                                allLogs += logModel.get(i).text + "\n";
-                            }
-                            // Copier dans le presse-papiers
-                            logModel.append({
-                                text: "[Copié] Logs copiés dans le presse-papiers"
-                            });
-                            logView.positionViewAtEnd();
-
-                            // Note: En QML/Qt, pour copier dans le clipboard il faut un objet C++
-                            // Workaround: afficher le texte pour que l'utilisateur puisse le copier manuellement
-                            console.log("=== LOGS À COPIER ===");
-                            console.log(allLogs);
-                            console.log("=== FIN DES LOGS ===");
-                        }
-                    }
-
-                    AnimatedButton {
                         text: "🗑️ Effacer logs"
                         buttonColor: Theme.buttonDefault
-                        onClicked: {
-                            logModel.clear();
-                        }
+                        onClicked: logModel.clear()
                     }
                 }
             }
@@ -405,8 +265,6 @@ Rectangle {
 
     Component.onCompleted: {
         logMessage("NetworkTest démarré");
-
-        // Debug: vérifier que networkManager est bien passé
         if (networkManager) {
             logMessage("✅ NetworkManager trouvé");
             logMessage("Connected: " + networkManager.isConnected);

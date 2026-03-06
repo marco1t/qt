@@ -51,17 +51,6 @@ QtObject {
     signal lobbyUpdated
 
     // ==========================================
-    // TIMER DE SYNCHRONISATION
-    // ==========================================
-
-    property var _syncTimer: Timer {
-        interval: 16
-        repeat: true
-        running: true
-        onTriggered: root._syncFromJS()
-    }
-
-    // ==========================================
     // MÉTHODES PUBLIQUES
     // ==========================================
 

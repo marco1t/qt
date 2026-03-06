@@ -6,4 +6,5 @@ GameStateManager 1.0 GameStateManager.qml
 GaugeBar 1.0 GaugeBar.qml
 LatencyStatsPanel 1.0 LatencyStatsPanel.qml
 NetworkManager 1.0 NetworkManager.qml
+TeamColumn 1.0 TeamColumn.qml
 ToastNotification 1.0 ToastNotification.qml

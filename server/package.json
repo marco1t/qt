@@ -5,7 +5,8 @@
   "main": "websocket-server.js",
   "scripts": {
     "start": "node websocket-server.js",
-    "dev": "node websocket-server.js 7777"
+    "dev": "node websocket-server.js 7777",
+    "test": "node tests.js"
   },
   "dependencies": {
     "ws": "^8.16.0"

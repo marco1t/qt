@@ -72,9 +72,9 @@ qt_add_qml_module(${PROJECT_NAME}
         qml/components/BotController.qml
         qml/components/GaugeBar.qml
         qml/components/LatencyStatsPanel.qml
+        qml/components/TeamColumn.qml
         qml/styles/Theme.qml
         qml/js/GameState.js
-        qml/js/BotManager.js
     RESOURCES
         qml/styles/qmldir
         qml/components/qmldir
