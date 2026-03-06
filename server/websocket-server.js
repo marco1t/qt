@@ -72,7 +72,9 @@ setInterval(() => {
         clickStats: stats.clickStats,
         maxGauge: stats.maxGauge,
         phase: stats.phase,
-        victoryBroadcastMs: stats.victoryBroadcastMs
+        victoryBroadcastMs: stats.victoryBroadcastMs,
+        latencyStats: stats.latencyStats,
+        victoryNotifStats: stats.victoryNotifStats
     };
 
     // Envoyer à tous les dashboards connectés
@@ -106,7 +108,7 @@ gameWss.on('connection', (ws, req) => {
             const message = JSON.parse(data.toString());
             // gameServer.handleMessage appelé plus bas
             // Optionnel : ne pas logger chaque click en mode stress test pour préserver la console
-            if (message.type !== 'click') {
+            if (message.type !== 'click' && message.type !== 'ping' && message.type !== 'latency_report' && message.type !== 'victory_received') {
                 console.log(`📨 Message de ${clientId}:`, message.type || 'unknown');
             }
 

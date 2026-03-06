@@ -59,6 +59,15 @@ let startTime = null;
 let clickInterval = null;
 
 // =============================================
+// LATENCE (ping/pong RTT)
+// =============================================
+let rttSamples = [];
+const MAX_RTT_SAMPLES = 100;
+let pingInterval = null;
+let reportInterval = null;
+let victoryDelay = null;
+
+// =============================================
 // AFFICHAGE
 // =============================================
 function log(emoji, msg) {
@@ -70,6 +79,19 @@ function printStats() {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const rate = Math.round(totalSent / parseFloat(elapsed));
     log('📊', `Envoyés: ${totalSent.toLocaleString()} | Batches: ${batchCount} | Durée: ${elapsed}s | Débit: ${rate} clics/s`);
+
+    // Stats de latence
+    if (rttSamples.length > 0) {
+        const sorted = [...rttSamples].sort((a, b) => a - b);
+        const avg = Math.round(rttSamples.reduce((a, b) => a + b, 0) / rttSamples.length);
+        const min = sorted[0];
+        const max = sorted[sorted.length - 1];
+        const p95 = sorted[Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1)];
+        log('📡', `RTT: avg=${avg}ms | min=${min}ms | max=${max}ms | p95=${p95}ms (${rttSamples.length} samples)`);
+    }
+    if (victoryDelay !== null) {
+        log('⏱️', `Délai notification victoire: ${victoryDelay}ms`);
+    }
 }
 
 // =============================================
@@ -103,11 +125,42 @@ ws.on('open', () => {
     ws.send(JSON.stringify(joinMsg));
     log('👤', `Joueur enregistré: ${BOT_NAME} (${playerId}) | Équipe: ${TEAM || 'auto'}`);
     log('⏳', `En attente du démarrage de la partie...`);
+
+    // Démarrer le ping périodique pour mesurer la latence
+    pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+        }
+    }, 2000);
+
+    // Envoyer un rapport de latence au serveur toutes les 5s
+    reportInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN && rttSamples.length > 0) {
+            const avg = Math.round(rttSamples.reduce((a, b) => a + b, 0) / rttSamples.length);
+            const sorted = [...rttSamples].sort((a, b) => a - b);
+            ws.send(JSON.stringify({
+                type: 'latency_report',
+                playerId: playerId,
+                avgRtt: avg,
+                minRtt: sorted[0],
+                maxRtt: sorted[sorted.length - 1],
+                sampleCount: rttSamples.length
+            }));
+        }
+    }, 5000);
 });
 
 ws.on('message', (data) => {
     try {
         const msg = JSON.parse(data.toString());
+
+        // Réponse pong → calculer le RTT
+        if (msg.type === 'pong' && msg.clientTs) {
+            const rtt = Date.now() - msg.clientTs;
+            rttSamples.push(rtt);
+            if (rttSamples.length > MAX_RTT_SAMPLES) rttSamples.shift();
+            return;
+        }
 
         // Détecter le passage en phase "playing"
         if (msg.type === 'state_update' || msg.type === 'lobby_update') {
@@ -127,6 +180,19 @@ ws.on('message', (data) => {
 
         // Victoire détectée - on simule le délai réseau réaliste
         if (msg.type === 'victory') {
+            // Calculer le délai de notification (temps entre envoi serveur → réception client)
+            if (msg.timestamp) {
+                victoryDelay = Date.now() - msg.timestamp;
+                // Rapporter au serveur pour le dashboard
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'victory_received',
+                        playerId: playerId,
+                        delay: victoryDelay
+                    }));
+                }
+            }
+
             log('🏆', `═══════════════════════════════════════`);
             log('🏆', `VICTOIRE : Équipe ${msg.winner} !`);
 
@@ -146,6 +212,16 @@ ws.on('message', (data) => {
             log('⚡', `Débit moyen   : ${rate.toLocaleString()} clics/s`);
             log('⏱️', `Durée         : ${elapsed}s`);
             log('📦', `Batches       : ${batchCount}`);
+
+            // Stats de latence
+            if (rttSamples.length > 0) {
+                const sorted = [...rttSamples].sort((a, b) => a - b);
+                const avgRtt = Math.round(rttSamples.reduce((a, b) => a + b, 0) / rttSamples.length);
+                log('📡', `RTT avg=${avgRtt}ms | min=${sorted[0]}ms | max=${sorted[sorted.length - 1]}ms`);
+            }
+            if (victoryDelay !== null) {
+                log('⏱️', `Délai notif victoire: ${victoryDelay}ms`);
+            }
             log('🏆', `═══════════════════════════════════════`);
 
             // Simuler un joueur réel : continue de cliquer brièvement après réception victoire
@@ -225,6 +301,14 @@ function stopClicking() {
     if (clickInterval) {
         clearInterval(clickInterval);
         clickInterval = null;
+    }
+    if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+    }
+    if (reportInterval) {
+        clearInterval(reportInterval);
+        reportInterval = null;
     }
 }
 

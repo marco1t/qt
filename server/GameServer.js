@@ -60,6 +60,14 @@ class GameServer {
 
         // Historique des joueurs déconnectés (pour le dashboard)
         this.disconnectedPlayers = [];
+
+        // ==========================================
+        // LATENCE RÉSEAU (ping/pong + rapports bots)
+        // ==========================================
+        this.latencyData = {
+            reports: new Map(),         // playerId -> { avgRtt, minRtt, maxRtt, sampleCount, lastUpdate }
+            victoryNotifDelays: []      // [{ playerId, delay, timestamp }]
+        };
     }
 
     /**
@@ -126,6 +134,15 @@ class GameServer {
                 break;
             case "update_config":
                 this.handleUpdateConfig(clientId, message);
+                break;
+            case "ping":
+                this.handlePing(clientId, message);
+                break;
+            case "latency_report":
+                this.handleLatencyReport(clientId, message);
+                break;
+            case "victory_received":
+                this.handleVictoryReceived(clientId, message);
                 break;
             default:
                 console.warn(`⚠️  GameServer: Type de message inconnu: ${type}`);
@@ -344,6 +361,10 @@ class GameServer {
         this.clickStats = { total: 0, validated: 0, rejected: 0 };
         this.victoryTime = null;
 
+        // Reset des données de latence
+        this.latencyData.reports.clear();
+        this.latencyData.victoryNotifDelays = [];
+
         // Reset des scores
         this.getAllPlayers().forEach(player => {
             player.score = 0;
@@ -368,6 +389,10 @@ class GameServer {
         this.clickStats = { total: 0, validated: 0, rejected: 0 };
         this.victoryTime = null;
         this.disconnectedPlayers = [];
+
+        // Reset des données de latence
+        this.latencyData.reports.clear();
+        this.latencyData.victoryNotifDelays = [];
 
         // Reset des scores
         this.getAllPlayers().forEach(player => {
@@ -590,6 +615,48 @@ class GameServer {
         this.broadcastLobbyUpdate();
     }
 
+    // ==========================================
+    // LATENCE : Ping/Pong & Rapports
+    // ==========================================
+
+    /**
+     * Répond immédiatement au ping d'un client pour mesurer le RTT
+     */
+    handlePing(clientId, message) {
+        const client = this.clients.get(clientId);
+        if (client && client.ws && client.ws.readyState === 1) {
+            client.ws.send(JSON.stringify({
+                type: 'pong',
+                clientTs: message.ts,
+                serverTs: Date.now()
+            }));
+        }
+    }
+
+    /**
+     * Reçoit un rapport de latence d'un bot de stress
+     */
+    handleLatencyReport(clientId, message) {
+        const { playerId, avgRtt, minRtt, maxRtt, sampleCount } = message;
+        this.latencyData.reports.set(playerId || clientId, {
+            avgRtt, minRtt, maxRtt, sampleCount,
+            lastUpdate: Date.now()
+        });
+    }
+
+    /**
+     * Reçoit la confirmation qu'un client a reçu le message de victoire
+     * Permet de calculer le délai réel de notification
+     */
+    handleVictoryReceived(clientId, message) {
+        const { playerId, delay } = message;
+        this.latencyData.victoryNotifDelays.push({
+            playerId: playerId || clientId,
+            delay,
+            timestamp: Date.now()
+        });
+    }
+
     /**
      * Gère la mise à jour de la configuration (Objectif de clics)
      */
@@ -639,6 +706,42 @@ class GameServer {
             ...this.disconnectedPlayers
         ];
 
+        // Agréger les rapports de latence de tous les bots
+        let latencyStats = null;
+        const reports = Array.from(this.latencyData.reports.values());
+        if (reports.length > 0) {
+            const avgValues = reports.map(r => r.avgRtt);
+            const minValues = reports.map(r => r.minRtt);
+            const maxValues = reports.map(r => r.maxRtt);
+            const sorted = [...avgValues].sort((a, b) => a - b);
+            const p95idx = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
+            const p99idx = Math.min(Math.floor(sorted.length * 0.99), sorted.length - 1);
+
+            latencyStats = {
+                avgRtt: Math.round(avgValues.reduce((a, b) => a + b, 0) / avgValues.length),
+                minRtt: Math.round(Math.min(...minValues)),
+                maxRtt: Math.round(Math.max(...maxValues)),
+                p95Rtt: Math.round(sorted[p95idx]),
+                p99Rtt: Math.round(sorted[p99idx]),
+                botCount: reports.length
+            };
+        }
+
+        // Stats de délai de notification de victoire
+        let victoryNotifStats = null;
+        if (this.latencyData.victoryNotifDelays.length > 0) {
+            const delays = this.latencyData.victoryNotifDelays.map(d => d.delay);
+            const sorted = [...delays].sort((a, b) => a - b);
+            const p95idx = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
+            victoryNotifStats = {
+                avgDelay: Math.round(delays.reduce((a, b) => a + b, 0) / delays.length),
+                minDelay: Math.round(Math.min(...delays)),
+                maxDelay: Math.round(Math.max(...delays)),
+                p95Delay: Math.round(sorted[p95idx]),
+                botCount: delays.length
+            };
+        }
+
         return {
             phase: this.state.phase,
             clients: this.clients.size,
@@ -648,7 +751,9 @@ class GameServer {
             playersList: allPlayersWithHistory,
             clickStats: { ...this.clickStats },
             maxGauge: this.state.config.maxGauge,
-            victoryBroadcastMs: this.victoryBroadcastMs
+            victoryBroadcastMs: this.victoryBroadcastMs,
+            latencyStats,
+            victoryNotifStats
         };
     }
 }

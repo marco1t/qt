@@ -573,6 +573,64 @@
 
 
 
+        <!-- RTT Latency Section -->
+        <div style="margin-bottom: 20px;">
+            <h3 style="color: #3498db; margin-bottom: 15px;">🏓 Latence Réseau — Ping/Pong RTT</h3>
+            <div class="latency-grid" style="grid-template-columns: repeat(6, 1fr);">
+                <div class="latency-card" style="border-left-color: #3498db;">
+                    <div class="latency-label">RTT Moyen</div>
+                    <div class="latency-value" id="rttAvg" style="color: #3498db;">--</div>
+                </div>
+                <div class="latency-card" style="border-left-color: #2ecc71;">
+                    <div class="latency-label">RTT Min</div>
+                    <div class="latency-value" id="rttMin" style="color: #2ecc71;">--</div>
+                </div>
+                <div class="latency-card" style="border-left-color: #e74c3c;">
+                    <div class="latency-label">RTT Max</div>
+                    <div class="latency-value" id="rttMax" style="color: #e74c3c;">--</div>
+                </div>
+                <div class="latency-card" style="border-left-color: #f39c12;">
+                    <div class="latency-label">P95 RTT</div>
+                    <div class="latency-value" id="rttP95" style="color: #f39c12;">--</div>
+                </div>
+                <div class="latency-card" style="border-left-color: #e67e22;">
+                    <div class="latency-label">P99 RTT</div>
+                    <div class="latency-value" id="rttP99" style="color: #e67e22;">--</div>
+                </div>
+                <div class="latency-card" style="border-left-color: #9b59b6;">
+                    <div class="latency-label">Bots mesurant</div>
+                    <div class="latency-value" id="rttBotCount" style="color: #9b59b6;">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Victory Notification Delay Section -->
+        <div style="margin-bottom: 20px;">
+            <h3 style="color: #f39c12; margin-bottom: 15px;">🏁 Délai Notification Victoire — Serveur → Clients</h3>
+            <div class="latency-grid" style="grid-template-columns: repeat(5, 1fr);">
+                <div class="latency-card" style="border-left-color: #f39c12;">
+                    <div class="latency-label">Délai Moyen</div>
+                    <div class="latency-value" id="victNotifAvg" style="color: #f39c12;">--</div>
+                </div>
+                <div class="latency-card" style="border-left-color: #2ecc71;">
+                    <div class="latency-label">Délai Min</div>
+                    <div class="latency-value" id="victNotifMin" style="color: #2ecc71;">--</div>
+                </div>
+                <div class="latency-card" style="border-left-color: #e74c3c;">
+                    <div class="latency-label">Délai Max</div>
+                    <div class="latency-value" id="victNotifMax" style="color: #e74c3c;">--</div>
+                </div>
+                <div class="latency-card" style="border-left-color: #e67e22;">
+                    <div class="latency-label">P95 Délai</div>
+                    <div class="latency-value" id="victNotifP95" style="color: #e67e22;">--</div>
+                </div>
+                <div class="latency-card" style="border-left-color: #9b59b6;">
+                    <div class="latency-label">Bots rapportés</div>
+                    <div class="latency-value" id="victNotifBotCount" style="color: #9b59b6;">0</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Player Details Grid -->
         <div class="grid-details">
             <div class="card">
@@ -769,6 +827,45 @@
             }
 
 
+
+            // ── Latence RTT (ping/pong) ──────────────────────────────
+            if (data.latencyStats) {
+                const ls = data.latencyStats;
+                document.getElementById('rttAvg').textContent = ls.avgRtt + ' ms';
+                document.getElementById('rttMin').textContent = ls.minRtt + ' ms';
+                document.getElementById('rttMax').textContent = ls.maxRtt + ' ms';
+                document.getElementById('rttP95').textContent = ls.p95Rtt + ' ms';
+                document.getElementById('rttP99').textContent = ls.p99Rtt + ' ms';
+                document.getElementById('rttBotCount').textContent = ls.botCount;
+
+                // Coloriser selon la qualité
+                const avgEl = document.getElementById('rttAvg');
+                avgEl.style.color = ls.avgRtt < 5 ? '#2ecc71' : ls.avgRtt < 50 ? '#f39c12' : '#e74c3c';
+            } else {
+                ['rttAvg', 'rttMin', 'rttMax', 'rttP95', 'rttP99'].forEach(id => {
+                    document.getElementById(id).textContent = '--';
+                });
+                document.getElementById('rttBotCount').textContent = '0';
+            }
+
+            // ── Délai notification victoire ──────────────────────────
+            if (data.victoryNotifStats) {
+                const vs = data.victoryNotifStats;
+                document.getElementById('victNotifAvg').textContent = vs.avgDelay + ' ms';
+                document.getElementById('victNotifMin').textContent = vs.minDelay + ' ms';
+                document.getElementById('victNotifMax').textContent = vs.maxDelay + ' ms';
+                document.getElementById('victNotifP95').textContent = vs.p95Delay + ' ms';
+                document.getElementById('victNotifBotCount').textContent = vs.botCount;
+
+                // Coloriser selon la qualité
+                const avgEl = document.getElementById('victNotifAvg');
+                avgEl.style.color = vs.avgDelay < 10 ? '#2ecc71' : vs.avgDelay < 100 ? '#f39c12' : '#e74c3c';
+            } else {
+                ['victNotifAvg', 'victNotifMin', 'victNotifMax', 'victNotifP95'].forEach(id => {
+                    document.getElementById(id).textContent = '--';
+                });
+                document.getElementById('victNotifBotCount').textContent = '0';
+            }
 
             // Reset le flag quand on revient au lobby (même si overlay supprimé, au cas où)
             if (data.phase === 'lobby') {
