@@ -22,7 +22,7 @@ class GameServer {
                 players: []
             },
             config: {
-                maxGauge: 100,
+                maxGauge: 100000,
                 territoryName: "Territoire 1"
             },
             winner: null
@@ -51,7 +51,7 @@ class GameServer {
         // Timestamp de la victoire (pour calculer la fenêtre de latence)
         this.victoryTime = null;
         // Durée pendant laquelle on accepte encore des clics "tardifs" à comptabiliser
-        this.LATENCY_WINDOW_MS = 5000; // 5s - fenêtre réaliste de latence réseau
+        this.LATENCY_WINDOW_MS = 1800000; // 30 minutes (au lieu de 5s) pour le stress test
         // Temps de broadcast de la victoire (ms)
         this.victoryBroadcastMs = null;
 

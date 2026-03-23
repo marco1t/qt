@@ -95,10 +95,9 @@ ws.on('message', (data) => {
     try {
         const msg = JSON.parse(data.toString());
 
-        // Détecter la fin de partie
+        // Détecter la fin de partie par le serveur, mais NE PAS arrêter le script !
         if (msg.type === 'victory') {
-            gameOver = true;
-            console.log(`\n🏆 Victoire détectée ! Arrêt des bots...`);
+            console.log(`\n🏆 Le serveur annonce la victoire ! Mais ce script continue de forcer l'envoi de TOUS les clics demandés...`);
             return;
         }
 
