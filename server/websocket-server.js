@@ -28,7 +28,8 @@ const GAME_PORT = parseInt(process.env.GAME_PORT || '7777', 10);
 const DASHBOARD_PORT = parseInt(process.env.DASHBOARD_PORT || '3000', 10);
 const INSTANCE_ID = process.env.INSTANCE_ID || crypto.randomUUID();
 
-console.log(`Instance ID: ${INSTANCE_ID.slice(0, 8)}`);
+const TAG = `[instance:${INSTANCE_ID.slice(0, 8)}]`;
+console.log(`${TAG} Starting up`);
 
 // --- 1. Creer le store ---
 const store = createStore(INSTANCE_ID);
@@ -52,7 +53,7 @@ const httpServer = http.createServer((req, res) => {
 });
 
 httpServer.listen(DASHBOARD_PORT, () => {
-    console.log(`Dashboard accessible sur http://localhost:${DASHBOARD_PORT}`);
+    console.log(`${TAG} Dashboard on http://localhost:${DASHBOARD_PORT}`);
 });
 
 // --- 3. Serveurs WebSocket ---
@@ -77,7 +78,7 @@ if (store.onBroadcastReceived !== undefined) {
                     client.ws.send(json);
                 }
             } catch (error) {
-                console.error('Erreur relai broadcast inter-instance:', error.message);
+                console.error(`${TAG} Relay broadcast error:`, error.message);
             }
         });
     };
@@ -85,9 +86,9 @@ if (store.onBroadcastReceived !== undefined) {
     // Connecter au Redis si c'est un RedisStore
     if (store.connect) {
         store.connect().then(() => {
-            console.log('Redis pub/sub actif pour le multi-instances');
+            console.log(`${TAG} Redis pub/sub connected`);
         }).catch(err => {
-            console.error('Echec connexion Redis:', err.message);
+            console.error(`${TAG} Redis connection failed:`, err.message);
         });
     }
 }
@@ -96,7 +97,7 @@ if (store.onBroadcastReceived !== undefined) {
 let messagesPerSecond = 0;
 const startTime = Date.now();
 
-console.log(`ClickWars Game Server demarre sur le port ${GAME_PORT}`);
+console.log(`${TAG} Game server on port ${GAME_PORT}`);
 
 // --- Logique Dashboard ---
 setInterval(async () => {
@@ -138,7 +139,7 @@ setInterval(async () => {
                 }
             }
         } catch (error) {
-            console.error('Erreur agregation stats:', error.message);
+            console.error(`${TAG} Stats aggregation error:`, error.message);
         }
     }
 
@@ -181,7 +182,7 @@ gameWss.on('connection', (ws, req) => {
     const ip = req.socket.remoteAddress;
 
     gameServer.addClient(clientId, ws);
-    console.log(`Client connecte: ${clientId} (${ip})`);
+    console.log(`${TAG} Client connected: ${clientId} (${ip})`);
 
     ws.on('message', (data) => {
         messagesPerSecond++;
@@ -204,23 +205,24 @@ gameWss.on('connection', (ws, req) => {
         const playerName = player ? player.name : clientId;
 
         gameServer.removeClient(clientId);
-        console.log(`Client deconnecte: ${clientId}`);
+        console.log(`${TAG} Client disconnected: ${clientId}`);
 
         gameServer.broadcast({
             type: 'player_left',
             playerId: clientId,
             playerName: playerName,
+            instanceId: INSTANCE_ID.slice(0, 8),
             message: `${playerName} a quitte la partie`,
             timestamp: Date.now()
         });
     });
 
-    ws.on('error', (err) => console.error(`Erreur client ${clientId}:`, err.message));
+    ws.on('error', (err) => console.error(`${TAG} Client error ${clientId}:`, err.message));
 });
 
 // Arret propre
 process.on('SIGINT', async () => {
-    console.log('\nArret des serveurs...');
+    console.log(`\n${TAG} Shutting down...`);
     gameWss.close();
     dashboardWss.close();
     httpServer.close();

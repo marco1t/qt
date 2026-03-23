@@ -402,6 +402,7 @@ class GameServer {
             teamBGauge: this.store.getGauge('B'),
             players: this.store.getPlayers(),
             phase: this.store.getPhase(),
+            instanceId: this.instanceId.slice(0, 8),
             timestamp: Date.now()
         };
 
@@ -438,6 +439,7 @@ class GameServer {
             maxGauge: this.store.getMaxGauge(),
             players: this.store.getPlayers(),
             phase: this.store.getPhase(),
+            instanceId: this.instanceId.slice(0, 8),
             timestamp: now
         };
 
@@ -458,6 +460,7 @@ class GameServer {
             finalScores: this.store.getPlayers(),
             clickStats: clickStats,
             latencyWindowMs: this.LATENCY_WINDOW_MS,
+            instanceId: this.instanceId.slice(0, 8),
             timestamp: Date.now()
         };
 
@@ -478,6 +481,7 @@ class GameServer {
             players: this.store.getPlayers(),
             phase: this.store.getPhase(),
             maxGauge: this.store.getMaxGauge(),
+            instanceId: this.instanceId.slice(0, 8),
             timestamp: Date.now()
         };
 

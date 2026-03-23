@@ -326,6 +326,7 @@
     <div class="topbar">
         <h1><span>Click</span>Wars Monitor</h1>
         <div class="status-text">
+            <span id="instanceBadge" style="background:#7c5cff22;color:#a78bfa;padding:3px 10px;border-radius:8px;font-size:0.8em;font-weight:600;margin-right:12px;display:none">instance: —</span>
             <span id="statusDot" class="status-dot"></span>
             <span id="statusText">Deconnecte</span>
         </div>
@@ -518,6 +519,13 @@
     // UPDATE
     // ======================================================
     function update(d) {
+        // Instance ID
+        if (d.instanceId) {
+            const badge = document.getElementById('instanceBadge');
+            badge.textContent = 'instance: ' + d.instanceId;
+            badge.style.display = 'inline-block';
+        }
+
         // Phase
         const phEl = document.getElementById('phaseVal');
         phEl.textContent = d.phase || 'lobby';
