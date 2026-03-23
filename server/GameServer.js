@@ -1,34 +1,34 @@
 /**
- * GameServer.js - Logique de jeu côté serveur
- * 
- * Gère l'état autoritaire du jeu :
+ * GameServer.js - Logique de jeu cote serveur
+ *
+ * Gere l'etat autoritaire du jeu :
  * - Valide les clics des joueurs
- * - Maintient l'état des jauges
- * - Détecte les victoires
- * - Diffuse les mises à jour à tous les clients
+ * - Maintient l'etat des jauges (via SharedStateStore)
+ * - Detecte les victoires
+ * - Diffuse les mises a jour a tous les clients
+ *
+ * Supporte le multi-instances : l'etat est delegue a un store
+ * qui peut etre en memoire locale (MemoryStore) ou partage (RedisStore).
  */
 
-class GameServer {
-    constructor() {
-        // État du serveur
-        this.state = {
-            phase: "lobby",  // lobby | playing | victory
-            teamA: {
-                gauge: 0,
-                players: []
-            },
-            teamB: {
-                gauge: 0,
-                players: []
-            },
-            config: {
-                maxGauge: 100000,
-                territoryName: "Territoire 1"
-            },
-            winner: null
-        };
+const crypto = require('crypto');
 
-        // Clients connectés
+class GameServer {
+    /**
+     * @param {object} store - Instance de MemoryStore ou RedisStore
+     * @param {string} [instanceId] - ID unique de cette instance (pour le multi-instances)
+     */
+    constructor(store, instanceId) {
+        if (!store) {
+            // Retrocompatibilite : si pas de store, creer un MemoryStore
+            const { MemoryStore } = require('./SharedStateStore');
+            store = new MemoryStore();
+        }
+
+        this.store = store;
+        this.instanceId = instanceId || crypto.randomUUID();
+
+        // Clients connectes (toujours LOCAL a cette instance)
         this.clients = new Map();  // clientId -> { ws, playerIds: [], playerData: [] }
 
         // Throttling pour les broadcasts
@@ -38,77 +38,53 @@ class GameServer {
 
         // Bot Loop
         this.botInterval = null;
-        this.BOT_CLICK_RATE_MS = 1000; // Chaque bot tente de cliquer toutes les X ms
+        this.BOT_CLICK_RATE_MS = 1000;
 
-        // ==========================================
-        // STATISTIQUES DE CLICS (pour la démo latence)
-        // ==========================================
-        // total    : tous les clics reçus pendant la partie
-        // validated: clics qui ont réellement incrémenté la jauge
-        // rejected : clics reçus APRÈS victoire (pendant la fenêtre de latence)
-        this.clickStats = { total: 0, validated: 0, rejected: 0 };
+        // Duree de la fenetre de latence pour compter les clics rejetes
+        this.LATENCY_WINDOW_MS = 1800000; // 30 minutes
 
-        // Timestamp de la victoire (pour calculer la fenêtre de latence)
-        this.victoryTime = null;
-        // Durée pendant laquelle on accepte encore des clics "tardifs" à comptabiliser
-        this.LATENCY_WINDOW_MS = 1800000; // 30 minutes (au lieu de 5s) pour le stress test
-        // Temps de broadcast de la victoire (ms)
-        this.victoryBroadcastMs = null;
-
-        // Compteur pour IDs uniques de bots
+        // Compteur pour IDs uniques de bots (prefixe par l'instanceId)
         this.botCounter = 0;
-
-        // Historique des joueurs déconnectés (pour le dashboard)
-        this.disconnectedPlayers = [];
-
-        // ==========================================
-        // LATENCE RÉSEAU (ping/pong + rapports bots)
-        // ==========================================
-        this.latencyData = {
-            reports: new Map(),         // playerId -> { avgRtt, minRtt, maxRtt, sampleCount, lastUpdate }
-            victoryNotifDelays: []      // [{ playerId, delay, timestamp }]
-        };
     }
 
     /**
-     * Ajoute un client connecté
+     * Ajoute un client connecte (LOCAL a cette instance)
      */
     addClient(clientId, ws) {
         this.clients.set(clientId, {
             ws: ws,
-            playerIds: [],      // Liste des IDs de joueurs créés par ce client
-            playerData: []      // Liste des données de joueurs
+            playerIds: [],
+            playerData: []
         });
-        console.log(`✅ GameServer: Client ${clientId} ajouté`);
+        console.log(`GameServer[${this.instanceId.slice(0,8)}]: Client ${clientId} ajoute`);
     }
 
     /**
-     * Retire un client déconnecté
+     * Retire un client deconnecte
      */
     removeClient(clientId) {
         const client = this.clients.get(clientId);
         if (client && client.playerIds.length > 0) {
-            // Sauvegarder les joueurs pour le dashboard avant suppression
             client.playerIds.forEach(playerId => {
-                const player = this.getPlayer(playerId);
+                const player = this.store.getPlayer(playerId);
                 if (player) {
-                    this.disconnectedPlayers.push({
+                    this.store.addDisconnectedPlayer({
                         ...player,
-                        name: player.name + ' (déco)',
+                        name: player.name + ' (deco)',
                         disconnectedAt: Date.now()
                     });
                 }
-                this.removePlayer(playerId);
-                console.log(`👤 GameServer: Joueur ${playerId} retiré (client déconnecté)`);
+                this.store.removePlayer(playerId);
+                console.log(`GameServer: Joueur ${playerId} retire (client deconnecte)`);
             });
             this.broadcastStateUpdate();
         }
         this.clients.delete(clientId);
-        console.log(`❌ GameServer: Client ${clientId} retiré`);
+        console.log(`GameServer: Client ${clientId} retire`);
     }
 
     /**
-     * Gère un message reçu d'un client
+     * Gere un message recu d'un client
      */
     handleMessage(clientId, message) {
         const { type } = message;
@@ -145,41 +121,31 @@ class GameServer {
                 this.handleVictoryReceived(clientId, message);
                 break;
             default:
-                console.warn(`⚠️  GameServer: Type de message inconnu: ${type}`);
+                console.warn(`GameServer: Type de message inconnu: ${type}`);
         }
     }
 
     /**
-     * Gère l'arrivée d'un joueur
+     * Gere l'arrivee d'un joueur
      */
     handlePlayerJoin(clientId, message) {
-        const { playerId, name } = message; // On ignore 'team' venant du client
+        const { playerId, name } = message;
 
-        console.log(`📨 GameServer: Demande de join reçue pour ${name} (${clientId})`);
+        console.log(`GameServer: Demande de join recue pour ${name} (${clientId})`);
 
-        // 1. Stratégie d'Auto-Équilibrage (Auto-Balance)
-        // On compte les joueurs ACTIFS dans chaque équipe
-        const countA = this.state.teamA.players.length;
-        const countB = this.state.teamB.players.length;
+        // Auto-equilibrage
+        const countA = this.store.getPlayerCount('A');
+        const countB = this.store.getPlayerCount('B');
 
         let assignedTeam = "A";
-
-        // Logique : On remplit A, puis B, puis A, puis B...
         if (countA > countB) {
             assignedTeam = "B";
         } else if (countB > countA) {
             assignedTeam = "A";
-        } else {
-            // Égalité ? On alterne basé sur le nombre total (si pair -> A, impair -> B)
-            // Ou plus simple : priorité à A par défaut s'il n'y a personne
-            assignedTeam = "A";
         }
 
-        console.log(`⚖️  Auto-Balance: A=${countA} vs B=${countB} -> Assignation ${assignedTeam}`);
+        console.log(`Auto-Balance: A=${countA} vs B=${countB} -> Assignation ${assignedTeam}`);
 
-        console.log(`👤 GameServer: Joueur VALIDÉ: ${name} -> Team ${assignedTeam}`);
-
-        // Créer le joueur avec l'équipe imposée
         const playerData = {
             id: playerId,
             name: name || `Joueur ${countA + countB + 1}`,
@@ -187,145 +153,128 @@ class GameServer {
             score: 0,
             isBot: false,
             isHost: false,
-            clickHistory: [] // Historique des timestamps de clics
+            clickHistory: []
         };
 
-        // Stocker dans le client (ajouter à la liste)
+        // Stocker dans le client local
         const client = this.clients.get(clientId);
         if (client) {
-            // Éviter les doublons
             if (!client.playerIds.includes(playerId)) {
                 client.playerIds.push(playerId);
                 client.playerData.push(playerData);
             }
         }
 
-        // Ajouter à l'équipe
-        this.addPlayer(playerData);
+        // Ajouter dans le store partage
+        this.store.addPlayer(playerData);
 
-        // Broadcast l'état complet au nouveau joueur (pour qu'il sache qui il est)
         this.sendStateToClient(clientId);
-
-        // Broadcast le lobby à tous les clients
         this.broadcastLobbyUpdate();
-
-        // Broadcast de l'état global (pour mettre à jour les jauges/scores partout)
         this.broadcastStateUpdate();
     }
 
     /**
-     * Gère un clic de joueur
-     *
-     * Logique de latence :
-     * - Phase "playing"  → clic validé (incrémente jauge)
-     * - Phase "victory" (dans la fenêtre de 1s) → clic rejeté mais COMPTÉ
-     * - Phase "victory" (après la fenêtre) → ignoré silencieusement
+     * Gere un clic de joueur
      */
     handleClick(clientId, message) {
         const { playerId } = message;
         const now = Date.now();
 
-        // ── Phase VICTOIRE : fenêtre de latence ──────────────────────────────
-        if (this.state.phase === "victory") {
-            // On ne compte les clics tardifs que pendant la fenêtre de latence
-            if (this.victoryTime && (now - this.victoryTime) < this.LATENCY_WINDOW_MS) {
-                this.clickStats.total++;
-                this.clickStats.rejected++;
-                // Tracker par joueur
-                const latePlayer = this.getPlayer(playerId);
+        // Phase VICTOIRE : fenetre de latence
+        if (this.store.getPhase() === "victory") {
+            const victoryTime = this.store.getVictoryTime();
+            if (victoryTime && (now - victoryTime) < this.LATENCY_WINDOW_MS) {
+                this.store.incrementClickStat('total');
+                this.store.incrementClickStat('rejected');
+                const latePlayer = this.store.getPlayer(playerId);
                 if (latePlayer) {
                     latePlayer.rejectedClicks = (latePlayer.rejectedClicks || 0) + 1;
                 }
-                // Log seulement tous les 1000 clics rejetés pour éviter de saturer la mémoire
-                if (this.clickStats.rejected % 1000 === 0) {
-                    console.log(`🚫 ${this.clickStats.rejected} clics rejetés (latence) - dernier: ${playerId}`);
+                const stats = this.store.getClickStats();
+                if (stats.rejected % 1000 === 0) {
+                    console.log(`${stats.rejected} clics rejetes (latence) - dernier: ${playerId}`);
                 }
             }
             return;
         }
 
-        // ── Phase non "playing" (lobby, etc.) : ignorer ──────────────────────
-        if (this.state.phase !== "playing") {
+        // Phase non "playing" : ignorer
+        if (this.store.getPhase() !== "playing") {
             return;
         }
 
-        // ── Trouver le joueur ────────────────────────────────────────────────
-        const player = this.getPlayer(playerId);
+        // Trouver le joueur
+        const player = this.store.getPlayer(playerId);
         if (!player) {
-            console.warn(`⚠️  GameServer: Joueur ${playerId} non trouvé`);
+            console.warn(`GameServer: Joueur ${playerId} non trouve`);
             return;
         }
 
-        // ── Comptabiliser le clic total ──────────────────────────────────────
-        this.clickStats.total++;
+        this.store.incrementClickStat('total');
 
-        // ── Vérifier si la jauge de son équipe est pleine ────────────────────
-        const teamData = this.getTeamData(player.team);
-        if (teamData.gauge >= this.state.config.maxGauge) {
-            // Jauge déjà pleine mais victoire pas encore déclarée (race condition)
-            this.clickStats.rejected++;
+        // Verifier si la jauge de son equipe est pleine
+        if (this.store.getGauge(player.team) >= this.store.getMaxGauge()) {
+            this.store.incrementClickStat('rejected');
             player.rejectedClicks = (player.rejectedClicks || 0) + 1;
             return;
         }
 
-        // ── Incrémenter la jauge (clic VALIDÉ) ──────────────────────────────
-        teamData.gauge++;
-        this.clickStats.validated++;
+        // Incrementer la jauge (clic VALIDE)
+        this.store.incrementGauge(player.team);
+        this.store.incrementClickStat('validated');
 
-        // Incrémenter le score du joueur
+        // Incrementer le score du joueur (synchro multi-instances)
         player.score++;
-        // Limiter l'historique pour éviter les fuites mémoire en stress test
+        this.store.updatePlayerScore(player.id, player.score);
         if (player.clickHistory.length < 50) {
             player.clickHistory.push(now);
         }
 
-        // ── Vérifier la victoire ─────────────────────────────────────────────
+        // Verifier la victoire (avec verrou distribue pour eviter les doublons)
         const winner = this.checkVictory();
         if (winner) {
-            this.state.winner = winner;
-            this.state.phase = "victory";
-            this.victoryTime = Date.now();  // Marquer le début de la fenêtre de latence
-            this.stopBotLoop();
-            this.broadcastVictory(winner);
+            this._triggerVictory(winner);
         } else {
             this.broadcastStateUpdate();
         }
     }
 
     /**
-     * Simule un clic de bot
+     * Simule les clics de bots
+     * En multi-instances, un verrou distribue garantit qu'une seule instance
+     * execute les bots a la fois (evite les clics en double).
      */
-    simulateBotClicks() {
-        if (this.state.phase !== "playing") return;
+    async simulateBotClicks() {
+        if (this.store.getPhase() !== "playing") return;
 
-        this.getAllPlayers().forEach(player => {
-            if (player.isBot) {
-                // Probabilité de clic variable pour faire "vivant"
-                if (Math.random() > 0.3) {
-                    this.handleBotClick(player);
+        // Verrou distribue : une seule instance fait tourner les bots
+        const acquired = await this.store.acquireLock('bot_loop', 1000);
+        if (!acquired) return;
+
+        try {
+            this.store.getPlayers().forEach(player => {
+                if (player.isBot) {
+                    if (Math.random() > 0.3) {
+                        this.handleBotClick(player);
+                    }
                 }
-            }
-        });
+            });
+        } finally {
+            await this.store.releaseLock('bot_loop');
+        }
     }
 
     handleBotClick(player) {
-        // Vérifier si la jauge de son équipe est pleine
-        const teamData = this.getTeamData(player.team);
-        if (teamData.gauge >= this.state.config.maxGauge) return;
+        if (this.store.getGauge(player.team) >= this.store.getMaxGauge()) return;
 
-        // Incrémenter
-        teamData.gauge++;
+        this.store.incrementGauge(player.team);
         player.score++;
+        this.store.updatePlayerScore(player.id, player.score);
         player.clickHistory.push(Date.now());
 
-        // Vérifier victoire (rare que ce soit le bot qui gagne pile au tick, mais possible)
         const winner = this.checkVictory();
         if (winner) {
-            this.state.winner = winner;
-            this.state.phase = "victory";
-            this.victoryTime = Date.now();  // Marquer le début de la fenêtre de latence
-            this.stopBotLoop();
-            this.broadcastVictory(winner);
+            this._triggerVictory(winner);
         } else {
             this.broadcastStateUpdate();
         }
@@ -333,138 +282,115 @@ class GameServer {
 
     startBotLoop() {
         if (this.botInterval) clearInterval(this.botInterval);
-        console.log("🤖 GameServer: Démarrage de l'IA");
+        console.log("GameServer: Demarrage de l'IA");
         this.botInterval = setInterval(() => {
             this.simulateBotClicks();
-        }, 500); // Check 2 fois par seconde
+        }, 500);
     }
 
     stopBotLoop() {
         if (this.botInterval) {
             clearInterval(this.botInterval);
             this.botInterval = null;
-            console.log("🤖 GameServer: Arrêt de l'IA");
+            console.log("GameServer: Arret de l'IA");
         }
     }
 
     /**
-     * Démarre le jeu
+     * Demarre le jeu
      */
     handleStartGame(clientId, message) {
-        console.log("🎮 GameServer: Démarrage du jeu");
-        this.state.phase = "playing";
-        this.state.teamA.gauge = 0;
-        this.state.teamB.gauge = 0;
-        this.state.winner = null;
-
-        // Reset des compteurs de clics
-        this.clickStats = { total: 0, validated: 0, rejected: 0 };
-        this.victoryTime = null;
-
-        // Reset des données de latence
-        this.latencyData.reports.clear();
-        this.latencyData.victoryNotifDelays = [];
-
-        // Reset des scores
-        this.getAllPlayers().forEach(player => {
-            player.score = 0;
-            player.clickHistory = [];
-        });
-
+        console.log("GameServer: Demarrage du jeu");
+        this.store.startGame();
         this.startBotLoop();
         this.broadcastStateUpdate();
     }
 
     /**
-     * Réinitialise le jeu
+     * Reinitialise le jeu
      */
     handleResetGame(clientId, message) {
-        console.log("🔄 GameServer: Reset du jeu");
-        this.state.phase = "lobby";
-        this.state.teamA.gauge = 0;
-        this.state.teamB.gauge = 0;
-        this.state.winner = null;
-
-        // Reset des compteurs de clics
-        this.clickStats = { total: 0, validated: 0, rejected: 0 };
-        this.victoryTime = null;
-        this.disconnectedPlayers = [];
-
-        // Reset des données de latence
-        this.latencyData.reports.clear();
-        this.latencyData.victoryNotifDelays = [];
-
-        // Reset des scores
-        this.getAllPlayers().forEach(player => {
-            player.score = 0;
-            player.clickHistory = [];
-        });
-
+        console.log("GameServer: Reset du jeu");
+        this.store.resetGame();
         this.stopBotLoop();
         this.broadcastStateUpdate();
     }
 
     /**
-     * Ajoute un joueur à l'équipe
-     */
-    addPlayer(playerData) {
-        const teamData = this.getTeamData(playerData.team);
-
-        // Vérifier si le joueur existe déjà
-        const existingIndex = teamData.players.findIndex(p => p.id === playerData.id);
-        if (existingIndex >= 0) {
-            teamData.players[existingIndex] = playerData;
-        } else {
-            teamData.players.push(playerData);
-        }
-    }
-
-    /**
-     * Retire un joueur
-     */
-    removePlayer(playerId) {
-        // Chercher dans les deux équipes
-        this.state.teamA.players = this.state.teamA.players.filter(p => p.id !== playerId);
-        this.state.teamB.players = this.state.teamB.players.filter(p => p.id !== playerId);
-    }
-
-    /**
-     * Retourne un joueur par ID
+     * Retourne un joueur par ID (delegation au store)
      */
     getPlayer(playerId) {
-        const all = this.getAllPlayers();
-        return all.find(p => p.id === playerId) || null;
+        return this.store.getPlayer(playerId);
     }
 
     /**
      * Retourne tous les joueurs
      */
     getAllPlayers() {
-        return [...this.state.teamA.players, ...this.state.teamB.players];
+        return this.store.getPlayers();
     }
 
     /**
-     * Retourne les données d'une équipe
+     * Retourne les donnees d'une equipe (objet de compat)
      */
     getTeamData(team) {
-        return team === "A" ? this.state.teamA : this.state.teamB;
+        return {
+            gauge: this.store.getGauge(team),
+            players: this.store.getPlayers(team)
+        };
     }
 
     /**
-     * Vérifie si une équipe a gagné
+     * Ajout direct de joueur (utilise par les tests)
+     */
+    addPlayer(playerData) {
+        this.store.addPlayer(playerData);
+    }
+
+    /**
+     * Retrait direct de joueur (utilise par les tests)
+     */
+    removePlayer(playerId) {
+        this.store.removePlayer(playerId);
+    }
+
+    /**
+     * Declenche la victoire avec verrou distribue (multi-instances safe)
+     * Le verrou empeche deux instances de declarer la victoire en meme temps.
+     */
+    _triggerVictory(winner) {
+        const lockResult = this.store.acquireLock('victory', 10000);
+
+        const applyVictory = (acquired) => {
+            if (acquired && this.store.getPhase() !== "victory") {
+                this.store.setWinner(winner);
+                this.store.setPhase("victory");
+                this.store.setVictoryTime(Date.now());
+                this.stopBotLoop();
+                this.broadcastVictory(winner);
+            }
+        };
+
+        // Supporte les locks synchrones (MemoryStore) et async (RedisStore)
+        if (lockResult && typeof lockResult.then === 'function') {
+            lockResult.then(applyVictory);
+        } else {
+            applyVictory(lockResult);
+        }
+    }
+
+    /**
+     * Verifie si une equipe a gagne
      */
     checkVictory() {
-        if (this.state.teamA.gauge >= this.state.config.maxGauge) {
-            return "A";
-        }
-        if (this.state.teamB.gauge >= this.state.config.maxGauge) {
-            return "B";
-        }
+        const maxGauge = this.store.getMaxGauge();
+        if (this.store.getGauge('A') >= maxGauge) return "A";
+        if (this.store.getGauge('B') >= maxGauge) return "B";
         return null;
     }
 
     /**
-     * Envoie l'état complet à un client spécifique
+     * Envoie l'etat complet a un client specifique
      */
     sendStateToClient(clientId) {
         const client = this.clients.get(clientId);
@@ -472,27 +398,26 @@ class GameServer {
 
         const message = {
             type: "state_update",
-            teamAGauge: this.state.teamA.gauge,
-            teamBGauge: this.state.teamB.gauge,
-            players: this.getAllPlayers(),
-            phase: this.state.phase,
+            teamAGauge: this.store.getGauge('A'),
+            teamBGauge: this.store.getGauge('B'),
+            players: this.store.getPlayers(),
+            phase: this.store.getPhase(),
             timestamp: Date.now()
         };
 
         try {
             client.ws.send(JSON.stringify(message));
         } catch (error) {
-            console.error(`❌ Erreur lors de l'envoi à ${clientId}:`, error.message);
+            console.error(`Erreur lors de l'envoi a ${clientId}:`, error.message);
         }
     }
 
     /**
-     * Diffuse une mise à jour d'état à tous les clients (avec throttling)
+     * Diffuse une mise a jour d'etat a tous les clients (avec throttling)
      */
     broadcastStateUpdate() {
         const now = Date.now();
 
-        // Throttling : max 30 updates/seconde
         if (now - this.lastBroadcast < this.BROADCAST_INTERVAL) {
             if (!this.pendingBroadcast) {
                 this.pendingBroadcast = setTimeout(() => {
@@ -508,11 +433,11 @@ class GameServer {
 
         const message = {
             type: "state_update",
-            teamAGauge: this.state.teamA.gauge,
-            teamBGauge: this.state.teamB.gauge,
-            maxGauge: this.state.config.maxGauge,
-            players: this.getAllPlayers(),
-            phase: this.state.phase,
+            teamAGauge: this.store.getGauge('A'),
+            teamBGauge: this.store.getGauge('B'),
+            maxGauge: this.store.getMaxGauge(),
+            players: this.store.getPlayers(),
+            phase: this.store.getPhase(),
             timestamp: now
         };
 
@@ -520,66 +445,56 @@ class GameServer {
     }
 
     /**
-     * Diffuse la victoire à tous les clients
+     * Diffuse la victoire a tous les clients
      */
     broadcastVictory(winner) {
-        console.log(`🏆 GameServer: Victoire équipe ${winner}!`);
-        console.log(`📊 Stats: ${this.clickStats.total} clics total | ${this.clickStats.validated} validés | ${this.clickStats.rejected} rejetés`);
+        const clickStats = this.store.getClickStats();
+        console.log(`GameServer: Victoire equipe ${winner}!`);
+        console.log(`Stats: ${clickStats.total} clics total | ${clickStats.validated} valides | ${clickStats.rejected} rejetes`);
 
         const message = {
             type: "victory",
             winner: winner,
-            finalScores: this.getAllPlayers(),
-            // ── Statistiques de latence ──────────────────────────────────────
-            clickStats: {
-                total: this.clickStats.total,
-                validated: this.clickStats.validated,
-                rejected: this.clickStats.rejected
-            },
+            finalScores: this.store.getPlayers(),
+            clickStats: clickStats,
             latencyWindowMs: this.LATENCY_WINDOW_MS,
             timestamp: Date.now()
         };
 
-        // Mesurer le temps de broadcast
         const t0 = performance.now();
         this.broadcast(message);
         const t1 = performance.now();
-        this.victoryBroadcastMs = parseFloat((t1 - t0).toFixed(3));
+        this.store.setVictoryBroadcastMs(parseFloat((t1 - t0).toFixed(3)));
 
-        console.log(`⏱️  Broadcast victoire envoyé en ${this.victoryBroadcastMs}ms à ${this.clients.size} client(s)`);
+        console.log(`Broadcast victoire envoye en ${this.store.getVictoryBroadcastMs()}ms a ${this.clients.size} client(s)`);
     }
 
     /**
-     * Diffuse l'état du lobby à tous les clients
+     * Diffuse l'etat du lobby a tous les clients
      */
     broadcastLobbyUpdate() {
         const message = {
             type: "lobby_update",
-            players: this.getAllPlayers(),
-            phase: this.state.phase,
-            maxGauge: this.state.config.maxGauge, // Envoyer la config actuelle
+            players: this.store.getPlayers(),
+            phase: this.store.getPhase(),
+            maxGauge: this.store.getMaxGauge(),
             timestamp: Date.now()
         };
 
-        console.log(`📝 Lobby broadcast: ${this.getAllPlayers().length} joueurs`);
+        console.log(`Lobby broadcast: ${this.store.getPlayerCount()} joueurs`);
         this.broadcast(message);
     }
 
     /**
-     * Gère l'ajout d'un bot par l'hôte
+     * Gere l'ajout d'un bot par l'hote
      */
     handleAddBot(clientId, message) {
         const { team, name } = message;
 
-        // Vérifier qu'on n'a pas trop de joueurs
-        // if (this.getAllPlayers().length >= 4) {
-        //    console.warn("⚠️  GameServer: Lobby plein, impossible d'ajouter un bot");
-        //    return;
-        // } -- LIMIT REMOVED
-
-        const botId = "bot_" + (++this.botCounter) + "_" + Date.now();
-        const botName = name || "Bot " + (this.getAllPlayers().length + 1);
-        const botTeam = team || (this.state.teamA.players.length <= this.state.teamB.players.length ? "A" : "B");
+        // ID unique globalement grace au prefixe d'instance
+        const botId = `bot_${this.instanceId.slice(0,8)}_${++this.botCounter}_${Date.now()}`;
+        const botName = name || "Bot " + (this.store.getPlayerCount() + 1);
+        const botTeam = team || (this.store.getPlayerCount('A') <= this.store.getPlayerCount('B') ? "A" : "B");
 
         const botData = {
             id: botId,
@@ -591,37 +506,32 @@ class GameServer {
             clickHistory: []
         };
 
-        this.addPlayer(botData);
-        console.log(`🤖 GameServer: Bot ajouté: ${botName} (Team ${botTeam})`);
+        this.store.addPlayer(botData);
+        console.log(`GameServer: Bot ajoute: ${botName} (Team ${botTeam})`);
 
         this.broadcastLobbyUpdate();
     }
 
     /**
-     * Gère le retrait d'un bot
+     * Gere le retrait d'un bot
      */
     handleRemoveBot(clientId, message) {
         const { botId } = message;
 
-        const player = this.getPlayer(botId);
+        const player = this.store.getPlayer(botId);
         if (!player || !player.isBot) {
-            console.warn(`⚠️  GameServer: Bot ${botId} non trouvé`);
+            console.warn(`GameServer: Bot ${botId} non trouve`);
             return;
         }
 
-        this.removePlayer(botId);
-        console.log(`🤖 GameServer: Bot retiré: ${player.name}`);
+        this.store.removePlayer(botId);
+        console.log(`GameServer: Bot retire: ${player.name}`);
 
         this.broadcastLobbyUpdate();
     }
 
-    // ==========================================
-    // LATENCE : Ping/Pong & Rapports
-    // ==========================================
+    // --- Latence : Ping/Pong & Rapports ---
 
-    /**
-     * Répond immédiatement au ping d'un client pour mesurer le RTT
-     */
     handlePing(clientId, message) {
         const client = this.clients.get(clientId);
         if (client && client.ws && client.ws.readyState === 1) {
@@ -633,24 +543,17 @@ class GameServer {
         }
     }
 
-    /**
-     * Reçoit un rapport de latence d'un bot de stress
-     */
     handleLatencyReport(clientId, message) {
         const { playerId, avgRtt, minRtt, maxRtt, sampleCount } = message;
-        this.latencyData.reports.set(playerId || clientId, {
+        this.store.setLatencyReport(playerId || clientId, {
             avgRtt, minRtt, maxRtt, sampleCount,
             lastUpdate: Date.now()
         });
     }
 
-    /**
-     * Reçoit la confirmation qu'un client a reçu le message de victoire
-     * Permet de calculer le délai réel de notification
-     */
     handleVictoryReceived(clientId, message) {
         const { playerId, delay } = message;
-        this.latencyData.victoryNotifDelays.push({
+        this.store.addVictoryNotifDelay({
             playerId: playerId || clientId,
             delay,
             timestamp: Date.now()
@@ -658,25 +561,25 @@ class GameServer {
     }
 
     /**
-     * Gère la mise à jour de la configuration (Objectif de clics)
+     * Gere la mise a jour de la configuration
      */
     handleUpdateConfig(clientId, message) {
         const { maxGauge } = message;
 
         if (!maxGauge || maxGauge < 10) {
-            return; // Ignorer valeurs invalides
+            return;
         }
 
-        console.log(`⚙️  GameServer: Config mise à jour: Objectif = ${maxGauge}`);
-        this.state.config.maxGauge = maxGauge;
+        console.log(`GameServer: Config mise a jour: Objectif = ${maxGauge}`);
+        this.store.setMaxGauge(maxGauge);
 
-        // Diffuser à tout le monde
         this.broadcastLobbyUpdate();
         this.broadcastStateUpdate();
     }
 
     /**
-     * Envoie un message à tous les clients connectés
+     * Envoie un message a tous les clients connectes (LOCAL seulement)
+     * Si le store est un RedisStore, il publie aussi sur pub/sub
      */
     broadcast(message) {
         const json = JSON.stringify(message);
@@ -684,31 +587,33 @@ class GameServer {
 
         this.clients.forEach((client, clientId) => {
             try {
-                if (client.ws && client.ws.readyState === 1) { // OPEN
+                if (client.ws && client.ws.readyState === 1) {
                     client.ws.send(json);
                     sentCount++;
                 }
             } catch (error) {
-                console.error(`❌ Erreur broadcast à ${clientId}:`, error.message);
+                console.error(`Erreur broadcast a ${clientId}:`, error.message);
             }
         });
 
-        // console.log(`📡 Broadcast ${message.type} à ${sentCount} clients`);
+        // Si on est en mode multi-instances, publier pour les autres instances
+        if (this.store.publishBroadcast) {
+            this.store.publishBroadcast(message);
+        }
     }
 
     /**
-     * Retourne les statistiques du serveur
+     * Retourne les statistiques du serveur (pour le dashboard)
      */
     getStats() {
-        // Combiner joueurs actifs + déconnectés pour le dashboard
         const allPlayersWithHistory = [
-            ...this.getAllPlayers(),
-            ...this.disconnectedPlayers
+            ...this.store.getPlayers(),
+            ...this.store.getDisconnectedPlayers()
         ];
 
-        // Agréger les rapports de latence de tous les bots
+        // Agreger les rapports de latence
         let latencyStats = null;
-        const reports = Array.from(this.latencyData.reports.values());
+        const reports = Array.from(this.store.getLatencyReports().values());
         if (reports.length > 0) {
             const avgValues = reports.map(r => r.avgRtt);
             const minValues = reports.map(r => r.minRtt);
@@ -727,33 +632,35 @@ class GameServer {
             };
         }
 
-        // Stats de délai de notification de victoire
+        // Stats de delai de notification de victoire
         let victoryNotifStats = null;
-        if (this.latencyData.victoryNotifDelays.length > 0) {
-            const delays = this.latencyData.victoryNotifDelays.map(d => d.delay);
-            const sorted = [...delays].sort((a, b) => a - b);
+        const delays = this.store.getVictoryNotifDelays();
+        if (delays.length > 0) {
+            const delayValues = delays.map(d => d.delay);
+            const sorted = [...delayValues].sort((a, b) => a - b);
             const p95idx = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
             victoryNotifStats = {
-                avgDelay: Math.round(delays.reduce((a, b) => a + b, 0) / delays.length),
-                minDelay: Math.round(Math.min(...delays)),
-                maxDelay: Math.round(Math.max(...delays)),
+                avgDelay: Math.round(delayValues.reduce((a, b) => a + b, 0) / delayValues.length),
+                minDelay: Math.round(Math.min(...delayValues)),
+                maxDelay: Math.round(Math.max(...delayValues)),
                 p95Delay: Math.round(sorted[p95idx]),
-                botCount: delays.length
+                botCount: delayValues.length
             };
         }
 
         return {
-            phase: this.state.phase,
+            phase: this.store.getPhase(),
             clients: this.clients.size,
-            players: this.getAllPlayers().length,
-            teamAGauge: this.state.teamA.gauge,
-            teamBGauge: this.state.teamB.gauge,
+            players: this.store.getPlayerCount(),
+            teamAGauge: this.store.getGauge('A'),
+            teamBGauge: this.store.getGauge('B'),
             playersList: allPlayersWithHistory,
-            clickStats: { ...this.clickStats },
-            maxGauge: this.state.config.maxGauge,
-            victoryBroadcastMs: this.victoryBroadcastMs,
+            clickStats: this.store.getClickStats(),
+            maxGauge: this.store.getMaxGauge(),
+            victoryBroadcastMs: this.store.getVictoryBroadcastMs(),
             latencyStats,
-            victoryNotifStats
+            victoryNotifStats,
+            instanceId: this.instanceId.slice(0, 8)
         };
     }
 }

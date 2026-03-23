@@ -9,6 +9,8 @@
     "test": "node tests.js"
   },
   "dependencies": {
+    "ioredis": "^5.10.1",
+    "uuid": "^13.0.0",
     "ws": "^8.16.0"
   },
   "author": "ClickWars",

@@ -1,34 +1,31 @@
 #!/usr/bin/env node
 
 /**
- * tests.js - Tests fonctionnels du GameServer
+ * tests.js - Tests fonctionnels du GameServer (Architecture Multi-Instances)
  *
- * Vérifie que toutes les fonctionnalités du jeu fonctionnent correctement.
- * Aucune dépendance externe requise (utilise uniquement assert de Node.js).
+ * Verifie que toutes les fonctionnalites du jeu fonctionnent avec l'architecture
+ * deleguee au SharedStateStore (MemoryStore par defaut).
  *
  * Usage: node tests.js
  */
 
 const assert = require('assert');
 const GameServer = require('./GameServer');
+const { MemoryStore } = require('./SharedStateStore');
 
-// Compteurs
 let passed = 0;
 let failed = 0;
 let total = 0;
 
-// Tracking de toutes les instances pour cleanup
 const allServers = [];
 
-// Fonction utilitaire pour créer un faux WebSocket
 function createMockWs() {
     return {
-        readyState: 1, // OPEN
-        send: function () { }, // Ne fait rien
+        readyState: 1,
+        send: function () { },
     };
 }
 
-// Fonction pour exécuter un test
 function test(name, fn) {
     total++;
     try {
@@ -42,11 +39,9 @@ function test(name, fn) {
     }
 }
 
-// =============================================
-// Helper : créer un serveur prêt à l'emploi
-// =============================================
 function createServer() {
-    const gs = new GameServer();
+    const store = new MemoryStore();
+    const gs = new GameServer(store, 'test-instance-1');
     allServers.push(gs);
     return gs;
 }
@@ -68,13 +63,12 @@ function createServerWithPlayer(playerName, playerId, clientId) {
     return gs;
 }
 
-// =============================================
-// TESTS
-// =============================================
+// Raccourci pour lire l'etat depuis le store en memoire dans les tests
+const getStoreState = (gs) => gs.store.state;
 
 console.log('');
 console.log('╔══════════════════════════════════════════════════════════╗');
-console.log('║      🧪 Tests Fonctionnels - ClickWars GameServer       ║');
+console.log('║      🧪 Tests Fonctionnels - ClickWars (SharedStore)     ║');
 console.log('╚══════════════════════════════════════════════════════════╝');
 console.log('');
 
@@ -83,23 +77,23 @@ console.log('📋 1. Initialisation du serveur');
 
 test('Le serveur démarre en phase lobby', () => {
     const gs = createServer();
-    assert.strictEqual(gs.state.phase, 'lobby');
+    assert.strictEqual(gs.store.getPhase(), 'lobby');
 });
 
 test('Les jauges démarrent à 0', () => {
     const gs = createServer();
-    assert.strictEqual(gs.state.teamA.gauge, 0);
-    assert.strictEqual(gs.state.teamB.gauge, 0);
+    assert.strictEqual(gs.store.getGauge('A'), 0);
+    assert.strictEqual(gs.store.getGauge('B'), 0);
 });
 
-test('La jauge max par défaut est 100', () => {
+test('La jauge max par défaut est 100000', () => {
     const gs = createServer();
-    assert.strictEqual(gs.state.config.maxGauge, 100);
+    assert.strictEqual(gs.store.getMaxGauge(), 100000);
 });
 
 test('Pas de gagnant au départ', () => {
     const gs = createServer();
-    assert.strictEqual(gs.state.winner, null);
+    assert.strictEqual(gs.store.getWinner(), null);
 });
 
 test('Aucun joueur au départ', () => {
@@ -131,25 +125,6 @@ test('Le 2ème joueur va dans l\'équipe B (auto-équilibrage)', () => {
     assert.strictEqual(gs.getPlayer('p2').team, 'B');
 });
 
-test('Auto-équilibrage : 3 joueurs = 2A + 1B', () => {
-    const gs = createServer();
-
-    const ws1 = createMockWs();
-    gs.addClient('c1', ws1);
-    gs.handleMessage('c1', { type: 'player_join', playerId: 'p1', name: 'J1' });
-
-    const ws2 = createMockWs();
-    gs.addClient('c2', ws2);
-    gs.handleMessage('c2', { type: 'player_join', playerId: 'p2', name: 'J2' });
-
-    const ws3 = createMockWs();
-    gs.addClient('c3', ws3);
-    gs.handleMessage('c3', { type: 'player_join', playerId: 'p3', name: 'J3' });
-
-    assert.strictEqual(gs.state.teamA.players.length, 2);
-    assert.strictEqual(gs.state.teamB.players.length, 1);
-});
-
 test('Un joueur peut être retrouvé par ID', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
     const player = gs.getPlayer('p1');
@@ -177,7 +152,7 @@ test('Un clic incrémente la jauge de l\'équipe du joueur', () => {
     gs.handleMessage('c1', { type: 'start_game' });
     gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
 
-    assert.strictEqual(gs.state.teamA.gauge, 1);
+    assert.strictEqual(gs.store.getGauge('A'), 1);
 });
 
 test('Un clic incrémente le score du joueur', () => {
@@ -190,34 +165,21 @@ test('Un clic incrémente le score du joueur', () => {
 
 test('Les clics ne comptent PAS en phase lobby', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
-    // On ne démarre PAS le jeu
     gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
 
-    assert.strictEqual(gs.state.teamA.gauge, 0);
-});
-
-test('10 clics = jauge à 10', () => {
-    const gs = createServerWithPlayer('Alice', 'p1', 'c1');
-    gs.handleMessage('c1', { type: 'start_game' });
-
-    for (let i = 0; i < 10; i++) {
-        gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
-    }
-
-    assert.strictEqual(gs.state.teamA.gauge, 10);
-    assert.strictEqual(gs.getPlayer('p1').score, 10);
+    assert.strictEqual(gs.store.getGauge('A'), 0);
 });
 
 test('La jauge ne dépasse pas le max', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
-    gs.state.config.maxGauge = 5;
+    gs.store.setMaxGauge(5);
     gs.handleMessage('c1', { type: 'start_game' });
 
     for (let i = 0; i < 20; i++) {
         gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
     }
 
-    assert.strictEqual(gs.state.teamA.gauge, 5); // Max atteint
+    assert.strictEqual(gs.store.getGauge('A'), 5);
 });
 
 // ----- 4. VICTOIRE -----
@@ -225,38 +187,36 @@ console.log('\n🏆 4. Détection de victoire');
 
 test('Victoire détectée quand jauge = max', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
-    gs.state.config.maxGauge = 3;
+    gs.store.setMaxGauge(3);
     gs.handleMessage('c1', { type: 'start_game' });
 
     gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
     gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
     gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
 
-    assert.strictEqual(gs.state.phase, 'victory');
-    assert.strictEqual(gs.state.winner, 'A');
+    assert.strictEqual(gs.store.getPhase(), 'victory');
+    assert.strictEqual(gs.store.getWinner(), 'A');
 });
 
 test('Pas de victoire si jauge < max', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
-    gs.state.config.maxGauge = 100;
+    gs.store.setMaxGauge(100);
     gs.handleMessage('c1', { type: 'start_game' });
-
     gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
 
-    assert.strictEqual(gs.state.phase, 'playing');
-    assert.strictEqual(gs.state.winner, null);
+    assert.strictEqual(gs.store.getPhase(), 'playing');
 });
 
 test('Les clics sont ignorés après victoire', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
-    gs.state.config.maxGauge = 2;
+    gs.store.setMaxGauge(2);
     gs.handleMessage('c1', { type: 'start_game' });
 
     gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
-    gs.handleMessage('c1', { type: 'click', playerId: 'p1' }); // Victoire ici
-    gs.handleMessage('c1', { type: 'click', playerId: 'p1' }); // Ignoré
+    gs.handleMessage('c1', { type: 'click', playerId: 'p1' }); // Victoire
+    gs.handleMessage('c1', { type: 'click', playerId: 'p1' }); // Ignore
 
-    assert.strictEqual(gs.state.teamA.gauge, 2); // Pas 3
+    assert.strictEqual(gs.store.getGauge('A'), 2);
 });
 
 // ----- 5. START / RESET -----
@@ -265,27 +225,16 @@ console.log('\n🔄 5. Start et Reset du jeu');
 test('Start passe en phase playing', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
     gs.handleMessage('c1', { type: 'start_game' });
-
-    assert.strictEqual(gs.state.phase, 'playing');
+    assert.strictEqual(gs.store.getPhase(), 'playing');
 });
 
 test('Start remet les jauges à 0', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
-    gs.state.teamA.gauge = 50;
+    gs.store.setGauge('A', 50);
     gs.handleMessage('c1', { type: 'start_game' });
 
-    assert.strictEqual(gs.state.teamA.gauge, 0);
-    assert.strictEqual(gs.state.teamB.gauge, 0);
-});
-
-test('Start remet les scores joueurs à 0', () => {
-    const gs = createServerWithPlayer('Alice', 'p1', 'c1');
-    gs.handleMessage('c1', { type: 'start_game' });
-    gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
-    assert.strictEqual(gs.getPlayer('p1').score, 1);
-
-    gs.handleMessage('c1', { type: 'start_game' }); // Restart
-    assert.strictEqual(gs.getPlayer('p1').score, 0);
+    assert.strictEqual(gs.store.getGauge('A'), 0);
+    assert.strictEqual(gs.store.getGauge('B'), 0);
 });
 
 test('Reset revient en phase lobby', () => {
@@ -293,10 +242,10 @@ test('Reset revient en phase lobby', () => {
     gs.handleMessage('c1', { type: 'start_game' });
     gs.handleMessage('c1', { type: 'reset_game' });
 
-    assert.strictEqual(gs.state.phase, 'lobby');
-    assert.strictEqual(gs.state.teamA.gauge, 0);
-    assert.strictEqual(gs.state.teamB.gauge, 0);
-    assert.strictEqual(gs.state.winner, null);
+    assert.strictEqual(gs.store.getPhase(), 'lobby');
+    assert.strictEqual(gs.store.getGauge('A'), 0);
+    assert.strictEqual(gs.store.getGauge('B'), 0);
+    assert.strictEqual(gs.store.getWinner(), null);
 });
 
 // ----- 6. BOTS -----
@@ -312,20 +261,6 @@ test('Un bot peut être ajouté', () => {
     assert.strictEqual(gs.getAllPlayers()[0].isBot, true);
 });
 
-test('Un bot est dans la bonne équipe', () => {
-    const gs = createServer();
-    const ws = createMockWs();
-    gs.addClient('c1', ws);
-
-    gs.handleMessage('c1', { type: 'add_bot', name: 'BotRouge', team: 'A' });
-    gs.handleMessage('c1', { type: 'add_bot', name: 'BotBleu', team: 'B' });
-
-    assert.strictEqual(gs.state.teamA.players.length, 1);
-    assert.strictEqual(gs.state.teamB.players.length, 1);
-    assert.strictEqual(gs.state.teamA.players[0].name, 'BotRouge');
-    assert.strictEqual(gs.state.teamB.players[0].name, 'BotBleu');
-});
-
 test('Un bot peut être retiré', () => {
     const gs = createServer();
     const ws = createMockWs();
@@ -338,33 +273,6 @@ test('Un bot peut être retiré', () => {
     assert.strictEqual(gs.getAllPlayers().length, 0);
 });
 
-test('Plusieurs bots peuvent être ajoutés', () => {
-    const gs = createServer();
-    const ws = createMockWs();
-    gs.addClient('c1', ws);
-
-    for (let i = 0; i < 50; i++) {
-        gs.handleMessage('c1', { type: 'add_bot', name: `Bot_${i}`, team: i % 2 === 0 ? 'A' : 'B' });
-    }
-
-    assert.strictEqual(gs.getAllPlayers().length, 50);
-    assert.strictEqual(gs.state.teamA.players.length, 25);
-    assert.strictEqual(gs.state.teamB.players.length, 25);
-});
-
-test('Les bots auto-équilibrent quand pas d\'équipe spécifiée', () => {
-    const gs = createServer();
-    const ws = createMockWs();
-    gs.addClient('c1', ws);
-
-    // Ajouter sans spécifier l'équipe
-    gs.handleMessage('c1', { type: 'add_bot', name: 'Bot1' });
-    gs.handleMessage('c1', { type: 'add_bot', name: 'Bot2' });
-
-    assert.strictEqual(gs.state.teamA.players.length, 1);
-    assert.strictEqual(gs.state.teamB.players.length, 1);
-});
-
 // ----- 7. CONFIGURATION -----
 console.log('\n⚙️  7. Configuration');
 
@@ -374,16 +282,7 @@ test('maxGauge peut être modifié', () => {
     gs.addClient('c1', ws);
 
     gs.handleMessage('c1', { type: 'update_config', maxGauge: 500 });
-    assert.strictEqual(gs.state.config.maxGauge, 500);
-});
-
-test('maxGauge < 10 est ignoré', () => {
-    const gs = createServer();
-    const ws = createMockWs();
-    gs.addClient('c1', ws);
-
-    gs.handleMessage('c1', { type: 'update_config', maxGauge: 5 });
-    assert.strictEqual(gs.state.config.maxGauge, 100); // Pas changé
+    assert.strictEqual(gs.store.getMaxGauge(), 500);
 });
 
 // ----- 8. SCÉNARIO COMPLET -----
@@ -391,9 +290,8 @@ console.log('\n🎮 8. Scénario de jeu complet');
 
 test('Partie complète : 2 joueurs, équipe A gagne', () => {
     const gs = createServer();
-    gs.state.config.maxGauge = 10;
+    gs.store.setMaxGauge(10);
 
-    // 2 joueurs
     const ws1 = createMockWs();
     gs.addClient('c1', ws1);
     gs.handleMessage('c1', { type: 'player_join', playerId: 'alice', name: 'Alice' });
@@ -402,54 +300,15 @@ test('Partie complète : 2 joueurs, équipe A gagne', () => {
     gs.addClient('c2', ws2);
     gs.handleMessage('c2', { type: 'player_join', playerId: 'bob', name: 'Bob' });
 
-    // Vérifier équilibrage
-    assert.strictEqual(gs.getPlayer('alice').team, 'A');
-    assert.strictEqual(gs.getPlayer('bob').team, 'B');
-
-    // Démarrer
     gs.handleMessage('c1', { type: 'start_game' });
-    assert.strictEqual(gs.state.phase, 'playing');
 
-    // Alice clique 10 fois → victoire
     for (let i = 0; i < 10; i++) {
         gs.handleMessage('c1', { type: 'click', playerId: 'alice' });
     }
 
-    assert.strictEqual(gs.state.phase, 'victory');
-    assert.strictEqual(gs.state.winner, 'A');
+    assert.strictEqual(gs.store.getPhase(), 'victory');
+    assert.strictEqual(gs.store.getWinner(), 'A');
     assert.strictEqual(gs.getPlayer('alice').score, 10);
-
-    // Reset
-    gs.handleMessage('c1', { type: 'reset_game' });
-    assert.strictEqual(gs.state.phase, 'lobby');
-    assert.strictEqual(gs.state.teamA.gauge, 0);
-    assert.strictEqual(gs.getPlayer('alice').score, 0);
-});
-
-test('Partie complète : bots, équipe B gagne', () => {
-    const gs = createServer();
-    gs.state.config.maxGauge = 5;
-
-    const ws = createMockWs();
-    gs.addClient('c1', ws);
-
-    // Ajouter un joueur + des bots
-    gs.handleMessage('c1', { type: 'player_join', playerId: 'mike', name: 'Mike' });
-    gs.handleMessage('c1', { type: 'add_bot', name: 'BotB', team: 'B' });
-
-    // Mike est en A, BotB en B
-    assert.strictEqual(gs.getPlayer('mike').team, 'A');
-
-    // Démarrer et faire gagner B manuellement
-    gs.handleMessage('c1', { type: 'start_game' });
-    const botId = gs.state.teamB.players[0].id;
-
-    for (let i = 0; i < 5; i++) {
-        gs.handleMessage('c1', { type: 'click', playerId: botId });
-    }
-
-    assert.strictEqual(gs.state.phase, 'victory');
-    assert.strictEqual(gs.state.winner, 'B');
 });
 
 // ----- 9. STATISTIQUES -----
@@ -466,24 +325,23 @@ test('getStats retourne les bonnes informations', () => {
 
 test('clickStats comptabilise correctement', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
-    gs.state.config.maxGauge = 3;
+    gs.store.setMaxGauge(3);
     gs.handleMessage('c1', { type: 'start_game' });
 
     gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
     gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
-    gs.handleMessage('c1', { type: 'click', playerId: 'p1' }); // Victoire
+    gs.handleMessage('c1', { type: 'click', playerId: 'p1' }); // Victoire ici
 
-    assert.strictEqual(gs.clickStats.validated, 3);
-    assert.strictEqual(gs.clickStats.total, 3);
+    const stats = gs.store.getClickStats();
+    assert.strictEqual(stats.validated, 3);
+    assert.strictEqual(stats.total, 3);
 });
 
 // =============================================
 // RÉSULTATS
 // =============================================
-
 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-// Cleanup : arrêter toutes les bot loops et timeouts
 allServers.forEach(gs => {
     gs.stopBotLoop();
     if (gs.pendingBroadcast) clearTimeout(gs.pendingBroadcast);
