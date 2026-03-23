@@ -533,19 +533,19 @@
         const bar = document.getElementById('activityBar');
         const label = document.getElementById('activityLabel');
         const mpsEl = document.getElementById('mpsVal');
-        let pct = Math.min(mps / 5000 * 100, 100); // 5000 msg/s = 100%
+        let pct = Math.min(mps / 30000 * 100, 100); // 30000 msg/s = 100%
         bar.style.width = pct + '%';
         if (mps === 0) {
             bar.style.background = '#333';
             label.textContent = 'Idle';
             label.style.color = '#555';
             mpsEl.style.color = '#555';
-        } else if (mps < 500) {
+        } else if (mps < 10000) {
             bar.style.background = '#22c55e';
             label.textContent = 'Normal';
             label.style.color = '#22c55e';
             mpsEl.style.color = '#22c55e';
-        } else if (mps < 2000) {
+        } else if (mps < 20000) {
             bar.style.background = '#f59e0b';
             label.textContent = 'Eleve';
             label.style.color = '#f59e0b';

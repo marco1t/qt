@@ -151,10 +151,7 @@ Rectangle {
                             border.width: 2
                         }
 
-                        // Validation IP
-                        validator: RegularExpressionValidator {
-                            regularExpression: /^(\d{1,3}\.){3}\d{1,3}$/
-                        }
+                        // Suppression du validateur strict pour permettre les noms de domaine (comme .com)
 
                         onAccepted: connectButton.clicked()
                     }

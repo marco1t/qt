@@ -75,7 +75,13 @@ const RESET = '\x1b[0m';
 // ─────────────────────────────────────────────────────────
 // Connexion WebSocket
 // ─────────────────────────────────────────────────────────
-const ws = new WebSocket(`ws://${HOST}:${PORT}`);
+let wsUrl = `ws://${HOST}:${PORT}`;
+if (HOST.includes('.com') || HOST.includes('.sh')) {
+    // Si c'est un nom de domaine distant, on force WSS (sécurisé sans port)
+    wsUrl = `wss://${HOST}`;
+}
+
+const ws = new WebSocket(wsUrl);
 
 let bots = [];
 let initialized = false;

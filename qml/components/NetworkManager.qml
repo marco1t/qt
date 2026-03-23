@@ -65,7 +65,18 @@ QtObject {
 
         root.localPlayerId = "client_" + Date.now();
 
-        var url = "ws://" + root.serverIp + ":" + root.port;
+        var protocol = "ws://";
+        // Si c'est un nom de domaine distant ou le port 443, on passe en sécurisé
+        if (root.serverIp.indexOf(".com") !== -1 || root.serverIp.indexOf(".sh") !== -1 || root.port === 443) {
+            protocol = "wss://";
+        }
+
+        var url = protocol + root.serverIp;
+        // Ne pas forcer le port dans l'URL si c'est le standard 443 ou 80 pour eviter des problemes
+        if (root.port !== 443 && root.port !== 80) {
+            url += ":" + root.port;
+        }
+
         console.log("NetworkManager: Connexion au serveur", url);
 
         wsClient.url = url;

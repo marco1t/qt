@@ -43,8 +43,10 @@ const BATCH_INTERVAL_MS = parseInt(getArg('interval', '500')); // Toutes les 500
 // Chaque bot a un rythme légèrement différent (±30%)
 const ACTUAL_INTERVAL = Math.floor(BATCH_INTERVAL_MS * (0.7 + Math.random() * 0.6));
 const MAX_DURATION = parseInt(getArg('duration', '0')); // 0 = infini
-
-const URL = `ws://${HOST}:${PORT}`;
+let URL = `ws://${HOST}:${PORT}`;
+if (HOST.includes('.com') || HOST.includes('.sh')) {
+    URL = `wss://${HOST}`; // Force HTTPS/WSS pour la prod
+}
 
 // =============================================
 // ÉTAT
