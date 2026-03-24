@@ -186,14 +186,14 @@ async function run() {
                 lastGaugeB = msg.teamBGauge || 0;
             }
             if (msg.type === 'victory') {
-                console.log(`\n\n${C.bold}${C.green}  🏆 VICTOIRE EQUIPE ${msg.winner} !${C.reset}`);
+                console.log(`\n\n${C.bold}${C.green}  VICTOIRE EQUIPE ${msg.winner} !${C.reset}`);
                 console.log(`  Les 2 instances ont detecte le meme gagnant.`);
                 console.log(`  Reset en cours...\n`);
                 setTimeout(() => {
                     ws1.send(JSON.stringify({ type: 'reset_game' }));
                     setTimeout(() => {
                         ws1.send(JSON.stringify({ type: 'start_game' }));
-                        console.log(`  ▶️  Nouvelle partie lancee automatiquement.\n`);
+                        console.log(`  Nouvelle partie lancee automatiquement.\n`);
                     }, 1000);
                 }, 2000);
             }
@@ -201,13 +201,91 @@ async function run() {
     });
 
     setInterval(() => {
-        const barA = '█'.repeat(Math.round(Math.min(lastGaugeA / MAX_GAUGE, 1) * 20));
-        const barB = '█'.repeat(Math.round(Math.min(lastGaugeB / MAX_GAUGE, 1) * 20));
+        const barA = '='.repeat(Math.round(Math.min(lastGaugeA / MAX_GAUGE, 1) * 20));
+        const barB = '='.repeat(Math.round(Math.min(lastGaugeB / MAX_GAUGE, 1) * 20));
         process.stdout.write(
-            `\r  ${C.blue}A [${barA.padEnd(20, '░')}] ${String(lastGaugeA).padStart(6)}${C.reset}` +
-            `   ${C.red}B [${barB.padEnd(20, '░')}] ${String(lastGaugeB).padStart(6)}${C.reset}  `
+            `\r  ${C.blue}A [${barA.padEnd(20, '-')}] ${String(lastGaugeA).padStart(6)}${C.reset}` +
+            `   ${C.red}B [${barB.padEnd(20, '-')}] ${String(lastGaugeB).padStart(6)}${C.reset}  `
         );
     }, 500);
+
+    // ─── 9. Simulate connection lifecycle events ───
+    // Periodically connect/disconnect/reconnect "ghost players" to generate lifecycle events
+    console.log(`\n  ${C.magenta}Lifecycle simulation: random connect/disconnect/reconnect every 5-15s${C.reset}\n`);
+
+    let ghostCounter = 0;
+    const ghostNames = ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank', 'Grace', 'Hank'];
+    let lastGhostWs = null;
+    let lastGhostName = null;
+    let lastGhostPort = null;
+
+    async function simulateLifecycle() {
+        const port = Math.random() > 0.5 ? PORT1 : PORT2;
+        const dashPort = port === PORT1 ? 3000 : 3001;
+
+        try {
+            // Reconnect scenario: if we have a recently disconnected ghost, reconnect it
+            if (lastGhostName && Math.random() > 0.5) {
+                const name = lastGhostName;
+                const rPort = lastGhostPort || port;
+                console.log(`  ${C.yellow}[lifecycle] Reconnecting ${name} to port ${rPort}...${C.reset}`);
+                const ws = new WebSocket(`ws://localhost:${rPort}`);
+                ws.on('open', () => {
+                    ws.send(JSON.stringify({ type: 'player_join', playerId: `ghost_${++ghostCounter}`, name: name }));
+                    lastGhostWs = ws;
+                    lastGhostName = name;
+                    lastGhostPort = rPort;
+                    // Will disconnect later
+                    const stayTime = rand(3000, 8000);
+                    setTimeout(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            console.log(`  ${C.red}[lifecycle] ${name} leaving (normal close) after ${Math.round(stayTime/1000)}s${C.reset}`);
+                            ws.close(1000);
+                            lastGhostName = name;
+                            lastGhostPort = rPort;
+                        }
+                    }, stayTime);
+                });
+                ws.on('error', () => {});
+            } else {
+                // New player scenario
+                const name = ghostNames[ghostCounter % ghostNames.length];
+                ghostCounter++;
+                console.log(`  ${C.green}[lifecycle] New player ${name} connecting to port ${port}...${C.reset}`);
+                const ws = new WebSocket(`ws://localhost:${port}`);
+                ws.on('open', () => {
+                    ws.send(JSON.stringify({ type: 'player_join', playerId: `ghost_${ghostCounter}`, name: name }));
+                    lastGhostWs = ws;
+                    lastGhostName = name;
+                    lastGhostPort = port;
+                    // Random disconnect after some time
+                    const stayTime = rand(4000, 12000);
+                    setTimeout(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            // Sometimes simulate a hard drop (no close frame)
+                            if (Math.random() > 0.7) {
+                                console.log(`  ${C.red}[lifecycle] ${name} dropped (connection lost)${C.reset}`);
+                                ws.terminate(); // Hard kill — generates code 1006
+                            } else {
+                                console.log(`  ${C.red}[lifecycle] ${name} leaving (normal close) after ${Math.round(stayTime/1000)}s${C.reset}`);
+                                ws.close(1000);
+                            }
+                            lastGhostName = name;
+                            lastGhostPort = port;
+                        }
+                    }, stayTime);
+                });
+                ws.on('error', () => {});
+            }
+        } catch (e) {}
+
+        // Schedule next lifecycle event
+        const nextDelay = rand(5000, 15000);
+        setTimeout(simulateLifecycle, nextDelay);
+    }
+
+    // Start lifecycle sim after a 3s delay
+    setTimeout(simulateLifecycle, 3000);
 }
 
 run();

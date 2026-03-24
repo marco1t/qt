@@ -97,6 +97,47 @@ if (store.onBroadcastReceived !== undefined) {
 let messagesPerSecond = 0;
 const startTime = Date.now();
 
+// --- Connection lifecycle tracking ---
+const connectionEvents = [];       // recent events (max 200)
+const MAX_EVENTS = 200;
+const knownClients = new Map();    // clientId -> { ip, connectedAt, playerName }
+const recentIPs = new Map();       // ip -> { clientId, playerName, disconnectedAt }
+
+function addConnectionEvent(event) {
+    event.timestamp = Date.now();
+    event.instanceId = INSTANCE_ID.slice(0, 8);
+    connectionEvents.push(event);
+    if (connectionEvents.length > MAX_EVENTS) connectionEvents.shift();
+    console.log(`${TAG} [lifecycle] ${event.type}: ${event.summary}`);
+
+    // Push to dashboard clients immediately
+    const msg = JSON.stringify({ type: 'connection_event', event });
+    dashboardWss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) client.send(msg);
+    });
+}
+
+// WebSocket close code meanings
+function closeReason(code) {
+    const reasons = {
+        1000: 'Normal close',
+        1001: 'Going away (page closed)',
+        1002: 'Protocol error',
+        1003: 'Unsupported data',
+        1005: 'No code provided',
+        1006: 'Connection lost (no close frame)',
+        1007: 'Invalid data',
+        1008: 'Policy violation',
+        1009: 'Message too big',
+        1010: 'Extension required',
+        1011: 'Internal server error',
+        1012: 'Service restart',
+        1013: 'Try again later',
+        1015: 'TLS handshake failed',
+    };
+    return reasons[code] || `Unknown (${code})`;
+}
+
 console.log(`${TAG} Game server on port ${GAME_PORT}`);
 
 // --- Logique Dashboard ---
@@ -158,7 +199,8 @@ setInterval(async () => {
         victoryBroadcastMs: stats.victoryBroadcastMs,
         latencyStats: stats.latencyStats,
         victoryNotifStats: stats.victoryNotifStats,
-        instanceId: stats.instanceId
+        instanceId: stats.instanceId,
+        connectionEvents: connectionEvents.slice(-50)
     };
 
     dashboardWss.clients.forEach(client => {
@@ -180,15 +222,46 @@ gameWss.on('connection', (ws, req) => {
     // UUID globalement unique (pas de collision entre instances)
     const clientId = `client_${INSTANCE_ID.slice(0, 8)}_${crypto.randomUUID().slice(0, 8)}`;
     const ip = req.socket.remoteAddress;
+    const connectedAt = Date.now();
+
+    // Reconnection detection: check if this IP recently disconnected
+    const previousSession = recentIPs.get(ip);
+    const isReconnect = previousSession && (connectedAt - previousSession.disconnectedAt < 30000);
 
     gameServer.addClient(clientId, ws);
-    console.log(`${TAG} Client connected: ${clientId} (IP: ${ip})`);
+    knownClients.set(clientId, { ip, connectedAt, playerName: null });
+
+    if (isReconnect) {
+        addConnectionEvent({
+            type: 'reconnect',
+            clientId,
+            ip,
+            previousClientId: previousSession.clientId,
+            previousPlayerName: previousSession.playerName,
+            downtime: connectedAt - previousSession.disconnectedAt,
+            summary: `${previousSession.playerName || ip} reconnected after ${Math.round((connectedAt - previousSession.disconnectedAt) / 1000)}s (was ${previousSession.clientId.slice(-8)}, now ${clientId.slice(-8)})`
+        });
+    } else {
+        addConnectionEvent({
+            type: 'connect',
+            clientId,
+            ip,
+            summary: `New connection ${clientId.slice(-8)} from ${ip}`
+        });
+    }
 
     ws.on('message', (data) => {
         messagesPerSecond++;
 
         try {
             const message = JSON.parse(data.toString());
+
+            // Track player name for lifecycle logs
+            if (message.type === 'player_join' && message.name) {
+                const info = knownClients.get(clientId);
+                if (info) info.playerName = message.name;
+            }
+
             if (message.type !== 'click' && message.type !== 'ping' && message.type !== 'latency_report' && message.type !== 'victory_received') {
                 console.log(`${TAG} Message from ${clientId}:`, message.type || 'unknown');
             }
@@ -200,12 +273,32 @@ gameWss.on('connection', (ws, req) => {
         }
     });
 
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
         const player = gameServer.getPlayer(clientId);
-        const playerName = player ? player.name : clientId;
+        const info = knownClients.get(clientId) || {};
+        const playerName = (player && player.name) || info.playerName || clientId;
+        const sessionDuration = Date.now() - connectedAt;
+
+        // Store for reconnection detection
+        recentIPs.set(ip, {
+            clientId,
+            playerName,
+            disconnectedAt: Date.now()
+        });
 
         gameServer.removeClient(clientId);
-        console.log(`${TAG} Client disconnected: ${clientId}`);
+        knownClients.delete(clientId);
+
+        addConnectionEvent({
+            type: 'disconnect',
+            clientId,
+            ip,
+            playerName,
+            code: code || 1005,
+            reason: closeReason(code || 1005),
+            sessionDuration,
+            summary: `${playerName} disconnected — ${closeReason(code || 1005)} (session: ${Math.round(sessionDuration / 1000)}s)`
+        });
 
         gameServer.broadcast({
             type: 'player_left',
@@ -217,7 +310,15 @@ gameWss.on('connection', (ws, req) => {
         });
     });
 
-    ws.on('error', (err) => console.error(`${TAG} Client error ${clientId}:`, err.message));
+    ws.on('error', (err) => {
+        addConnectionEvent({
+            type: 'error',
+            clientId,
+            ip,
+            error: err.message,
+            summary: `Error on ${clientId.slice(-8)}: ${err.message}`
+        });
+    });
 });
 
 // Arret propre

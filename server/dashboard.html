@@ -313,6 +313,114 @@
         }
         .btn-tiny:hover { background: #3a3a4a; color: #ccc; }
 
+        /* ---- CONNECTION LOGS VIEW ---- */
+        #connectionLogsView {
+            display: none;
+            padding: 20px 28px;
+        }
+        .logs-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .logs-header h2 {
+            font-size: 1.1em;
+            font-weight: 700;
+            color: #e0e0e0;
+        }
+        .logs-stats {
+            display: flex;
+            gap: 16px;
+        }
+        .logs-stat {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        .logs-stat .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .logs-stat .dot.green { background: #22c55e; box-shadow: 0 0 6px #22c55e66; }
+        .logs-stat .dot.red { background: #ef4444; box-shadow: 0 0 6px #ef444466; }
+        .logs-stat .dot.yellow { background: #f59e0b; box-shadow: 0 0 6px #f59e0b66; }
+        .logs-stat .dot.gray { background: #666; }
+
+        .log-feed {
+            background: #111118;
+            border: 1px solid #2a2a3a;
+            border-radius: 12px;
+            max-height: 70vh;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
+        .log-entry {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px 16px;
+            border-bottom: 1px solid #1a1a24;
+            font-size: 0.85em;
+            animation: fadeIn 0.3s ease;
+        }
+        .log-entry:last-child { border-bottom: none; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .log-icon {
+            width: 28px; height: 28px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85em;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        .log-icon.connect { background: #22c55e22; color: #22c55e; }
+        .log-icon.disconnect { background: #ef444422; color: #ef4444; }
+        .log-icon.reconnect { background: #f59e0b22; color: #f59e0b; }
+        .log-icon.error { background: #64748b22; color: #64748b; }
+
+        .log-body { flex: 1; }
+        .log-summary {
+            color: #d0d0d0;
+            line-height: 1.5;
+        }
+        .log-meta {
+            color: #555;
+            font-size: 0.8em;
+            margin-top: 2px;
+            font-family: 'Courier New', monospace;
+        }
+        .log-time {
+            color: #555;
+            font-size: 0.8em;
+            white-space: nowrap;
+            margin-top: 3px;
+        }
+        .log-empty {
+            text-align: center;
+            padding: 40px;
+            color: #444;
+            font-style: italic;
+        }
+
+        #toggleViewBtn:hover {
+            background: #3a3a4a !important;
+            border-color: #7c5cff !important;
+        }
+        #toggleViewBtn.active {
+            background: #7c5cff33 !important;
+            border-color: #7c5cff !important;
+            color: #c4b5fd !important;
+        }
+
         /* ---- RESPONSIVE ---- */
         @media (max-width: 768px) {
             .teams-grid { grid-template-columns: 1fr; }
@@ -326,11 +434,31 @@
     <div class="topbar">
         <h1><span>Click</span>Wars Monitor</h1>
         <div class="status-text">
+            <button id="toggleViewBtn" onclick="toggleView()" style="background:#2a2a3a;border:1px solid #3a3a4a;color:#a78bfa;padding:6px 16px;border-radius:8px;font-size:0.8em;font-weight:600;margin-right:12px;cursor:pointer;font-family:Inter,sans-serif;transition:all .2s">Connection Logs</button>
             <span id="instanceBadge" style="background:#7c5cff22;color:#a78bfa;padding:3px 10px;border-radius:8px;font-size:0.8em;font-weight:600;margin-right:12px;display:none">instance: —</span>
             <span id="statusDot" class="status-dot"></span>
             <span id="statusText">Deconnecte</span>
         </div>
     </div>
+
+    <!-- CONNECTION LOGS VIEW (hidden by default) -->
+    <div id="connectionLogsView">
+        <div class="logs-header">
+            <h2>Connection Lifecycle</h2>
+            <div class="logs-stats">
+                <div class="logs-stat"><span class="dot green"></span> <span id="logConnCount">0</span> connects</div>
+                <div class="logs-stat"><span class="dot red"></span> <span id="logDiscCount">0</span> disconnects</div>
+                <div class="logs-stat"><span class="dot yellow"></span> <span id="logRecoCount">0</span> reconnects</div>
+                <div class="logs-stat"><span class="dot gray"></span> <span id="logErrCount">0</span> errors</div>
+            </div>
+        </div>
+        <div class="log-feed" id="logFeed">
+            <div class="log-empty">Waiting for connection events...</div>
+        </div>
+    </div>
+
+    <!-- DASHBOARD VIEW -->
+    <div id="dashboardView">
 
     <!-- STAT PILLS -->
     <div class="pills">
@@ -408,6 +536,7 @@
             <div id="teamB-details"><p class="empty-msg">En attente de joueurs...</p></div>
         </div>
     </div>
+    </div> <!-- /dashboardView -->
 
 <script>
     // ======================================================
@@ -510,7 +639,15 @@
         };
         ws.onmessage = (e) => {
             const d = JSON.parse(e.data);
+            if (d.type === 'connection_event') {
+                handleConnectionEvent(d.event);
+                return;
+            }
             latestData = d;
+            // Load historical connection events from periodic updates
+            if (d.connectionEvents && allConnectionEvents.length === 0) {
+                d.connectionEvents.forEach(ev => handleConnectionEvent(ev));
+            }
             update(d);
         };
     }
@@ -689,6 +826,101 @@
             el.style.display = 'block';
             openLogIds.add(id);
         }
+    }
+
+    // ======================================================
+    // CONNECTION LOGS VIEW
+    // ======================================================
+    let showingLogs = false;
+    let allConnectionEvents = [];
+    const logCounts = { connect: 0, disconnect: 0, reconnect: 0, error: 0 };
+
+    function toggleView() {
+        showingLogs = !showingLogs;
+        const btn = document.getElementById('toggleViewBtn');
+        document.getElementById('dashboardView').style.display = showingLogs ? 'none' : 'block';
+        document.getElementById('connectionLogsView').style.display = showingLogs ? 'block' : 'none';
+        btn.textContent = showingLogs ? 'Dashboard' : 'Connection Logs';
+        btn.classList.toggle('active', showingLogs);
+        if (showingLogs) renderLogFeed();
+    }
+
+    function handleConnectionEvent(event) {
+        // Avoid duplicates
+        const isDup = allConnectionEvents.some(e =>
+            e.timestamp === event.timestamp && e.clientId === event.clientId && e.type === event.type
+        );
+        if (isDup) return;
+
+        allConnectionEvents.push(event);
+        if (allConnectionEvents.length > 200) allConnectionEvents.shift();
+        if (logCounts[event.type] !== undefined) logCounts[event.type]++;
+        updateLogCounts();
+        if (showingLogs) appendLogEntry(event);
+    }
+
+    function updateLogCounts() {
+        document.getElementById('logConnCount').textContent = logCounts.connect;
+        document.getElementById('logDiscCount').textContent = logCounts.disconnect;
+        document.getElementById('logRecoCount').textContent = logCounts.reconnect;
+        document.getElementById('logErrCount').textContent = logCounts.error;
+    }
+
+    function renderLogFeed() {
+        const feed = document.getElementById('logFeed');
+        if (allConnectionEvents.length === 0) {
+            feed.innerHTML = '<div class="log-empty">Waiting for connection events...</div>';
+            return;
+        }
+        feed.innerHTML = '';
+        // Show newest first
+        const reversed = [...allConnectionEvents].reverse();
+        reversed.forEach(ev => {
+            feed.innerHTML += logEntryHTML(ev);
+        });
+    }
+
+    function appendLogEntry(event) {
+        const feed = document.getElementById('logFeed');
+        // Remove empty message if present
+        const empty = feed.querySelector('.log-empty');
+        if (empty) empty.remove();
+        // Prepend (newest first)
+        feed.insertAdjacentHTML('afterbegin', logEntryHTML(event));
+        // Cap at 200 entries in DOM
+        while (feed.children.length > 200) feed.lastChild.remove();
+    }
+
+    function logEntryHTML(ev) {
+        const icons = {
+            connect: '+',
+            disconnect: '-',
+            reconnect: '~',
+            error: '!'
+        };
+        const time = new Date(ev.timestamp);
+        const timeStr = time.toLocaleTimeString() + '.' + String(time.getMilliseconds()).padStart(3, '0');
+
+        let meta = `client: ${ev.clientId || '?'}`;
+        if (ev.ip) meta += ` | ip: ${ev.ip}`;
+        if (ev.code) meta += ` | code: ${ev.code}`;
+        if (ev.sessionDuration) meta += ` | session: ${Math.round(ev.sessionDuration / 1000)}s`;
+        if (ev.downtime) meta += ` | downtime: ${Math.round(ev.downtime / 1000)}s`;
+
+        return `<div class="log-entry">
+            <div class="log-icon ${ev.type}">${icons[ev.type] || '?'}</div>
+            <div class="log-body">
+                <div class="log-summary">${escapeHtml(ev.summary || ev.type)}</div>
+                <div class="log-meta">${escapeHtml(meta)}</div>
+            </div>
+            <div class="log-time">${timeStr}</div>
+        </div>`;
+    }
+
+    function escapeHtml(str) {
+        const d = document.createElement('div');
+        d.textContent = str;
+        return d.innerHTML;
     }
 
     // Go
