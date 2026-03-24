@@ -421,6 +421,60 @@
             color: #c4b5fd !important;
         }
 
+        /* ---- INSTANCES PANEL ---- */
+        .instances-panel {
+            display: none;
+            position: absolute;
+            top: 60px;
+            right: 28px;
+            background: #1a1a24;
+            border: 1px solid #2a2a3a;
+            border-radius: 12px;
+            padding: 16px;
+            min-width: 320px;
+            z-index: 100;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .instances-panel.visible { display: block; }
+        .instances-panel h3 {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #666;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+        .instance-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            margin-bottom: 4px;
+            background: #111118;
+            font-size: 0.85em;
+        }
+        .instance-row .inst-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow: 0 0 6px #22c55e66;
+            flex-shrink: 0;
+        }
+        .instance-row .inst-id {
+            font-family: 'Courier New', monospace;
+            font-weight: 700;
+            color: #a78bfa;
+            min-width: 72px;
+        }
+        .instance-row .inst-stat {
+            color: #666;
+            font-size: 0.85em;
+        }
+        .instance-row .inst-stat b {
+            color: #ccc;
+        }
+
         /* ---- RESPONSIVE ---- */
         @media (max-width: 768px) {
             .teams-grid { grid-template-columns: 1fr; }
@@ -435,10 +489,19 @@
         <h1><span>Click</span>Wars Monitor</h1>
         <div class="status-text">
             <button id="toggleViewBtn" onclick="toggleView()" style="background:#2a2a3a;border:1px solid #3a3a4a;color:#a78bfa;padding:6px 16px;border-radius:8px;font-size:0.8em;font-weight:600;margin-right:12px;cursor:pointer;font-family:Inter,sans-serif;transition:all .2s">Connection Logs</button>
+            <span id="instancesBadge" onclick="toggleInstancesPanel()" style="background:#22c55e22;color:#22c55e;padding:3px 10px;border-radius:8px;font-size:0.8em;font-weight:600;margin-right:12px;cursor:pointer;display:none;position:relative">
+                <span id="instancesBadgeText">● 1 instance</span>
+            </span>
             <span id="instanceBadge" style="background:#7c5cff22;color:#a78bfa;padding:3px 10px;border-radius:8px;font-size:0.8em;font-weight:600;margin-right:12px;display:none">instance: —</span>
             <span id="statusDot" class="status-dot"></span>
             <span id="statusText">Deconnecte</span>
         </div>
+    </div>
+
+    <!-- INSTANCES PANEL (popup) -->
+    <div class="instances-panel" id="instancesPanel">
+        <h3>Active Instances</h3>
+        <div id="instancesList"></div>
     </div>
 
     <!-- CONNECTION LOGS VIEW (hidden by default) -->
@@ -662,6 +725,9 @@
             badge.textContent = 'instance: ' + d.instanceId;
             badge.style.display = 'inline-block';
         }
+
+        // Active instances
+        if (d.activeInstances) updateInstancesDisplay(d.activeInstances);
 
         // Phase
         const phEl = document.getElementById('phaseVal');
@@ -921,6 +987,50 @@
         const d = document.createElement('div');
         d.textContent = str;
         return d.innerHTML;
+    }
+
+    // ======================================================
+    // INSTANCES PANEL
+    // ======================================================
+    let instancesPanelOpen = false;
+
+    function toggleInstancesPanel() {
+        instancesPanelOpen = !instancesPanelOpen;
+        document.getElementById('instancesPanel').classList.toggle('visible', instancesPanelOpen);
+    }
+
+    // Close panel when clicking outside
+    document.addEventListener('click', (e) => {
+        const panel = document.getElementById('instancesPanel');
+        const badge = document.getElementById('instancesBadge');
+        if (instancesPanelOpen && !panel.contains(e.target) && !badge.contains(e.target)) {
+            instancesPanelOpen = false;
+            panel.classList.remove('visible');
+        }
+    });
+
+    function updateInstancesDisplay(instances) {
+        if (!instances || instances.length === 0) return;
+
+        // Update badge
+        const badge = document.getElementById('instancesBadge');
+        const badgeText = document.getElementById('instancesBadgeText');
+        badge.style.display = 'inline-block';
+        badgeText.textContent = `● ${instances.length} instance${instances.length > 1 ? 's' : ''}`;
+
+        // Update panel list
+        const list = document.getElementById('instancesList');
+        list.innerHTML = instances.map(inst => {
+            const uptimeStr = fmtTime(inst.uptime || 0);
+            return `<div class="instance-row">
+                <span class="inst-dot"></span>
+                <span class="inst-id">${inst.id}</span>
+                <span class="inst-stat"><b>${inst.clients}</b> clients</span>
+                <span class="inst-stat"><b>${inst.mps}</b> msg/s</span>
+                <span class="inst-stat"><b>${inst.memory}</b> MB</span>
+                <span class="inst-stat">${uptimeStr}</span>
+            </div>`;
+        }).join('');
     }
 
     // Go

@@ -150,6 +150,13 @@ setInterval(async () => {
     let totalClients = localClients;
     let totalMps = localMps;
     let totalMemory = used;
+    let activeInstances = [{
+        id: INSTANCE_ID.slice(0, 8),
+        clients: localClients,
+        mps: localMps,
+        memory: Math.round(used * 100) / 100,
+        uptime: Math.floor((Date.now() - startTime) / 1000)
+    }];
 
     // Agregation multi-instances via Redis
     if (store.redis) {
@@ -159,12 +166,14 @@ setInterval(async () => {
                 clients: localClients,
                 mps: localMps,
                 memory: used,
+                uptime: Math.floor((Date.now() - startTime) / 1000),
                 timestamp: Date.now()
             }));
 
-            // 2. Recuperer le total
+            // 2. Recuperer le total + liste des instances actives
             const allStats = await store.redis.hgetall('clickwars:instances:stats');
             totalClients = 0; totalMps = 0; totalMemory = 0;
+            activeInstances = [];
             const now = Date.now();
 
             for (const id in allStats) {
@@ -174,6 +183,13 @@ setInterval(async () => {
                     totalClients += s.clients || 0;
                     totalMps += s.mps || 0;
                     totalMemory += s.memory || 0;
+                    activeInstances.push({
+                        id: id.slice(0, 8),
+                        clients: s.clients || 0,
+                        mps: s.mps || 0,
+                        memory: Math.round((s.memory || 0) * 100) / 100,
+                        uptime: s.uptime || 0
+                    });
                 } else {
                     // Nettoyer les vieilles instances
                     store.redis.hdel('clickwars:instances:stats', id);
@@ -200,6 +216,7 @@ setInterval(async () => {
         latencyStats: stats.latencyStats,
         victoryNotifStats: stats.victoryNotifStats,
         instanceId: stats.instanceId,
+        activeInstances: activeInstances,
         connectionEvents: connectionEvents.slice(-50)
     };
 
