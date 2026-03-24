@@ -1,0 +1,118 @@
+\documentclass[12pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+
+\geometry{margin=2.5cm}
+
+\definecolor{codeBackground}{rgb}{0.95,0.95,0.95}
+\definecolor{codeBorder}{rgb}{0.7,0.7,0.7}
+
+\lstset{
+    backgroundcolor=\color{codeBackground},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    rulecolor=\color{codeBorder},
+    xleftmargin=8pt,
+    xrightmargin=8pt,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\textcolor{gray}{\small ClickWars -- multi-instance update}}
+\lhead{\textcolor{gray}{\small Roulem Baitiche}}
+\rfoot{\textcolor{gray}{\small Page \thepage}}
+\lfoot{\textcolor{gray}{\small \today}}
+
+\begin{document}
+
+\begin{center}
+    {\Large \textbf{ClickWars -- Multi-Instance Update}}\\[0.4em]
+    {\small Roulem Baitiche \quad | \quad \today}
+\end{center}
+
+\vspace{1em}
+\hrule
+\vspace{1.2em}
+
+\textbf{Task:} \textit{``1. Prepare the server to run safely in multiple parallel instances''}
+
+\vspace{0.5em}
+\hrule
+\vspace{1em}
+
+\section*{What was done}
+
+The ClickWars server can now run as multiple instances in parallel behind a load balancer without game state going out of sync.
+
+Previously, the game state (gauges, players, phase) lived only in the Node.js process memory. Two instances had no way to share it.
+
+\textbf{Solution:} a new file \texttt{SharedStateStore.js} was added. It exposes two implementations of the same interface:
+
+\begin{itemize}
+    \item \texttt{MemoryStore} -- identical behaviour to the old code, no new dependencies. Used in development.
+    \item \texttt{RedisStore} -- extends MemoryStore. Every state mutation is synced to other instances via Redis pub/sub. Each instance keeps a local cache for performance. A full state snapshot is saved to Redis every 2 seconds so a new instance can join an ongoing game.
+\end{itemize}
+
+\textbf{Other changes:}
+\begin{itemize}
+    \item \texttt{GameServer.js} -- uses \texttt{store.acquireLock()} for victory detection (prevents duplicate declarations) and for the bot loop (only one instance runs bots at a time).
+    \item \texttt{websocket-server.js} -- each instance has a unique \texttt{INSTANCE\_ID}; client and bot IDs are prefixed to avoid collisions. The Redis pub/sub relay forwards WebSocket broadcasts to clients connected on other instances.
+    \item No changes to the WebSocket protocol or the user interface.
+\end{itemize}
+
+\section*{Deployment prerequisite}
+
+A Redis server must be reachable from each Node.js instance.
+
+\begin{lstlisting}
+# Install (Debian/Ubuntu)
+apt install redis-server
+
+# Verify
+redis-cli ping   # -> PONG
+\end{lstlisting}
+
+\section*{Environment variables}
+
+\begin{lstlisting}
+REDIS_URL=redis://<host>:6379   # enables multi-instance mode
+INSTANCE_ID=instance-1          # optional, auto-generated if absent
+PORT=3000
+\end{lstlisting}
+
+Without \texttt{REDIS\_URL}, the server runs in memory mode (single instance, same behaviour as before).
+
+\section*{Tests}
+
+\begin{lstlisting}
+# Unit tests (27 tests, no Redis required)
+node tests.js
+
+# Multi-instance tests (requires Redis)
+node tests-multi-instance.js
+
+# Visual demo (2 instances + Redis)
+node demo-multi-instance.js
+\end{lstlisting}
+
+\section*{Nginx note}
+
+For WebSocket connections, use \texttt{ip\_hash} in the upstream block so each client sticks to the same instance.
+
+\begin{lstlisting}
+upstream clickwars {
+    ip_hash;
+    server 127.0.0.1:3000;
+    server 127.0.0.1:3001;
+}
+\end{lstlisting}
+
+\end{document}

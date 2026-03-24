@@ -27,6 +27,7 @@ class GameServer {
 
         this.store = store;
         this.instanceId = instanceId || crypto.randomUUID();
+        this.TAG = `[instance:${this.instanceId.slice(0, 8)}]`;
 
         // Clients connectes (toujours LOCAL a cette instance)
         this.clients = new Map();  // clientId -> { ws, playerIds: [], playerData: [] }
@@ -56,7 +57,7 @@ class GameServer {
             playerIds: [],
             playerData: []
         });
-        console.log(`GameServer[${this.instanceId.slice(0,8)}]: Client ${clientId} ajoute`);
+        console.log(`${this.TAG} Client ${clientId} connected`);
     }
 
     /**
@@ -75,12 +76,12 @@ class GameServer {
                     });
                 }
                 this.store.removePlayer(playerId);
-                console.log(`GameServer: Joueur ${playerId} retire (client deconnecte)`);
+                console.log(`${this.TAG} Player ${playerId} removed (client disconnected)`);
             });
             this.broadcastStateUpdate();
         }
         this.clients.delete(clientId);
-        console.log(`GameServer: Client ${clientId} retire`);
+        console.log(`${this.TAG} Client ${clientId} disconnected`);
     }
 
     /**
@@ -121,7 +122,7 @@ class GameServer {
                 this.handleVictoryReceived(clientId, message);
                 break;
             default:
-                console.warn(`GameServer: Type de message inconnu: ${type}`);
+                console.warn(`${this.TAG} Unknown message type: ${type}`);
         }
     }
 
@@ -131,7 +132,7 @@ class GameServer {
     handlePlayerJoin(clientId, message) {
         const { playerId, name } = message;
 
-        console.log(`GameServer: Demande de join recue pour ${name} (${clientId})`);
+        console.log(`${this.TAG} Player join: ${name} (${clientId})`);
 
         // Auto-equilibrage
         const countA = this.store.getPlayerCount('A');
@@ -144,7 +145,7 @@ class GameServer {
             assignedTeam = "A";
         }
 
-        console.log(`Auto-Balance: A=${countA} vs B=${countB} -> Assignation ${assignedTeam}`);
+        console.log(`${this.TAG} Auto-balance: A=${countA} vs B=${countB} -> assigned ${assignedTeam}`);
 
         const playerData = {
             id: playerId,
@@ -192,7 +193,7 @@ class GameServer {
                 }
                 const stats = this.store.getClickStats();
                 if (stats.rejected % 1000 === 0) {
-                    console.log(`${stats.rejected} clics rejetes (latence) - dernier: ${playerId}`);
+                    console.log(`${this.TAG} ${stats.rejected} clicks rejected (latency) - last: ${playerId}`);
                 }
             }
             return;
@@ -206,7 +207,7 @@ class GameServer {
         // Trouver le joueur
         const player = this.store.getPlayer(playerId);
         if (!player) {
-            console.warn(`GameServer: Joueur ${playerId} non trouve`);
+            console.warn(`${this.TAG} Player ${playerId} not found`);
             return;
         }
 
@@ -282,7 +283,7 @@ class GameServer {
 
     startBotLoop() {
         if (this.botInterval) clearInterval(this.botInterval);
-        console.log("GameServer: Demarrage de l'IA");
+        console.log(`${this.TAG} Bot loop started`);
         this.botInterval = setInterval(() => {
             this.simulateBotClicks();
         }, 500);
@@ -292,7 +293,7 @@ class GameServer {
         if (this.botInterval) {
             clearInterval(this.botInterval);
             this.botInterval = null;
-            console.log("GameServer: Arret de l'IA");
+            console.log(`${this.TAG} Bot loop stopped`);
         }
     }
 
@@ -300,7 +301,7 @@ class GameServer {
      * Demarre le jeu
      */
     handleStartGame(clientId, message) {
-        console.log("GameServer: Demarrage du jeu");
+        console.log(`${this.TAG} Game started`);
         this.store.startGame();
         this.startBotLoop();
         this.broadcastStateUpdate();
@@ -310,7 +311,7 @@ class GameServer {
      * Reinitialise le jeu
      */
     handleResetGame(clientId, message) {
-        console.log("GameServer: Reset du jeu");
+        console.log(`${this.TAG} Game reset`);
         this.store.resetGame();
         this.stopBotLoop();
         this.broadcastStateUpdate();
@@ -409,7 +410,7 @@ class GameServer {
         try {
             client.ws.send(JSON.stringify(message));
         } catch (error) {
-            console.error(`Erreur lors de l'envoi a ${clientId}:`, error.message);
+            console.error(`${this.TAG} Send error to ${clientId}:`, error.message);
         }
     }
 
@@ -451,8 +452,8 @@ class GameServer {
      */
     broadcastVictory(winner) {
         const clickStats = this.store.getClickStats();
-        console.log(`GameServer: Victoire equipe ${winner}!`);
-        console.log(`Stats: ${clickStats.total} clics total | ${clickStats.validated} valides | ${clickStats.rejected} rejetes`);
+        console.log(`${this.TAG} Victory team ${winner}!`);
+        console.log(`${this.TAG} Stats: ${clickStats.total} total | ${clickStats.validated} validated | ${clickStats.rejected} rejected`);
 
         const message = {
             type: "victory",
@@ -469,7 +470,7 @@ class GameServer {
         const t1 = performance.now();
         this.store.setVictoryBroadcastMs(parseFloat((t1 - t0).toFixed(3)));
 
-        console.log(`Broadcast victoire envoye en ${this.store.getVictoryBroadcastMs()}ms a ${this.clients.size} client(s)`);
+        console.log(`${this.TAG} Victory broadcast sent in ${this.store.getVictoryBroadcastMs()}ms to ${this.clients.size} client(s)`);
     }
 
     /**
@@ -485,7 +486,7 @@ class GameServer {
             timestamp: Date.now()
         };
 
-        console.log(`Lobby broadcast: ${this.store.getPlayerCount()} joueurs`);
+        console.log(`${this.TAG} Lobby broadcast: ${this.store.getPlayerCount()} players`);
         this.broadcast(message);
     }
 
@@ -511,7 +512,7 @@ class GameServer {
         };
 
         this.store.addPlayer(botData);
-        console.log(`GameServer: Bot ajoute: ${botName} (Team ${botTeam})`);
+        console.log(`${this.TAG} Bot added: ${botName} (Team ${botTeam})`);
 
         this.broadcastLobbyUpdate();
     }
@@ -524,12 +525,12 @@ class GameServer {
 
         const player = this.store.getPlayer(botId);
         if (!player || !player.isBot) {
-            console.warn(`GameServer: Bot ${botId} non trouve`);
+            console.warn(`${this.TAG} Bot ${botId} not found`);
             return;
         }
 
         this.store.removePlayer(botId);
-        console.log(`GameServer: Bot retire: ${player.name}`);
+        console.log(`${this.TAG} Bot removed: ${player.name}`);
 
         this.broadcastLobbyUpdate();
     }
@@ -574,7 +575,7 @@ class GameServer {
             return;
         }
 
-        console.log(`GameServer: Config mise a jour: Objectif = ${maxGauge}`);
+        console.log(`${this.TAG} Config updated: maxGauge = ${maxGauge}`);
         this.store.setMaxGauge(maxGauge);
 
         this.broadcastLobbyUpdate();
@@ -596,7 +597,7 @@ class GameServer {
                     sentCount++;
                 }
             } catch (error) {
-                console.error(`Erreur broadcast a ${clientId}:`, error.message);
+                console.error(`${this.TAG} Broadcast error to ${clientId}:`, error.message);
             }
         });
 

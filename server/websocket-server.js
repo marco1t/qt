@@ -182,7 +182,7 @@ gameWss.on('connection', (ws, req) => {
     const ip = req.socket.remoteAddress;
 
     gameServer.addClient(clientId, ws);
-    console.log(`${TAG} Client connected: ${clientId} (${ip})`);
+    console.log(`${TAG} Client connected: ${clientId} (IP: ${ip})`);
 
     ws.on('message', (data) => {
         messagesPerSecond++;
@@ -190,13 +190,13 @@ gameWss.on('connection', (ws, req) => {
         try {
             const message = JSON.parse(data.toString());
             if (message.type !== 'click' && message.type !== 'ping' && message.type !== 'latency_report' && message.type !== 'victory_received') {
-                console.log(`Message de ${clientId}:`, message.type || 'unknown');
+                console.log(`${TAG} Message from ${clientId}:`, message.type || 'unknown');
             }
 
             gameServer.handleMessage(clientId, message);
 
         } catch (error) {
-            console.error(`Erreur JSON:`, error.message);
+            console.error(`${TAG} JSON error:`, error.message);
         }
     });
 
@@ -222,7 +222,7 @@ gameWss.on('connection', (ws, req) => {
 
 // Arret propre
 process.on('SIGINT', async () => {
-    console.log(`\n${TAG} Shutting down...`);
+    console.log(`\n${TAG} Shutting down gracefully...`);
     gameWss.close();
     dashboardWss.close();
     httpServer.close();
