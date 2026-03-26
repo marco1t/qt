@@ -20,12 +20,7 @@ const DURATION_SEC = parseInt(process.env.DURATION || '20');
 const CLICK_INTERVAL = parseInt(process.env.CLICK_MS || '50'); // ms between clicks per client
 const MAX_GAUGE = parseInt(process.env.MAX_GAUGE || '999999'); // high so game doesn't end during test
 
-const C = {
-    reset: '\x1b[0m', bold: '\x1b[1m',
-    red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
-    blue: '\x1b[34m', cyan: '\x1b[36m', magenta: '\x1b[35m',
-    dim: '\x1b[2m',
-};
+const C = require('./cli-colors');
 
 // ─── Stats ───────────────────────────────────────────────────────
 const stats = {

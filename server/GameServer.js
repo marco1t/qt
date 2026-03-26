@@ -27,7 +27,8 @@ class GameServer {
 
         this.store = store;
         this.instanceId = instanceId || crypto.randomUUID();
-        this.TAG = `[instance:${this.instanceId.slice(0, 8)}]`;
+        this.shortId = this.shortId;
+        this.TAG = `[instance:${this.shortId}]`;
 
         // Clients connectes (toujours LOCAL a cette instance)
         this.clients = new Map();  // clientId -> { ws, playerIds: [], playerData: [] }
@@ -179,32 +180,20 @@ class GameServer {
      */
     handleClick(clientId, message) {
         const { playerId } = message;
-        const now = Date.now();
 
-        // Phase VICTOIRE : fenetre de latence
+        // Phase VICTOIRE : tous les clics sont rejetes et comptabilises
         if (this.store.getPhase() === "victory") {
-            const victoryTime = this.store.getVictoryTime();
-            if (victoryTime && (now - victoryTime) < this.LATENCY_WINDOW_MS) {
-                this.store.incrementClickStat('total');
-                this.store.incrementClickStat('rejected');
-                const latePlayer = this.store.getPlayer(playerId);
-                if (latePlayer) {
-                    latePlayer.rejectedClicks = (latePlayer.rejectedClicks || 0) + 1;
-                }
-                const stats = this.store.getClickStats();
-                if (stats.rejected % 1000 === 0) {
-                    console.log(`${this.TAG} ${stats.rejected} clicks rejected (latency) - last: ${playerId}`);
-                }
+            this.store.incrementClickStat('total');
+            this.store.incrementClickStat('rejected');
+            const latePlayer = this.store.getPlayer(playerId);
+            if (latePlayer) {
+                latePlayer.rejectedClicks = (latePlayer.rejectedClicks || 0) + 1;
             }
             return;
         }
 
-        // Phase non "playing" : ignorer
-        if (this.store.getPhase() !== "playing") {
-            return;
-        }
+        if (this.store.getPhase() !== "playing") return;
 
-        // Trouver le joueur
         const player = this.store.getPlayer(playerId);
         if (!player) {
             console.warn(`${this.TAG} Player ${playerId} not found`);
@@ -213,50 +202,29 @@ class GameServer {
 
         this.store.incrementClickStat('total');
 
-        // Verifier si la jauge de son equipe est pleine
         if (this.store.getGauge(player.team) >= this.store.getMaxGauge()) {
             this.store.incrementClickStat('rejected');
             player.rejectedClicks = (player.rejectedClicks || 0) + 1;
             return;
         }
 
-        // Incrementer la jauge (clic VALIDE)
-        this.store.incrementGauge(player.team);
-        this.store.incrementClickStat('validated');
-
-        // Incrementer le score du joueur (synchro multi-instances)
-        player.score++;
-        this.store.updatePlayerScore(player.id, player.score);
-        if (player.clickHistory.length < 50) {
-            player.clickHistory.push(now);
-        }
-
-        // Verifier la victoire (avec verrou distribue pour eviter les doublons)
-        const winner = this.checkVictory();
-        if (winner) {
-            this._triggerVictory(winner);
-        } else {
-            this.broadcastStateUpdate();
-        }
+        this._applyValidClick(player);
     }
 
     /**
-     * Simule les clics de bots
-     * En multi-instances, un verrou distribue garantit qu'une seule instance
-     * execute les bots a la fois (evite les clics en double).
+     * Simule les clics de bots (une seule instance via verrou distribue)
      */
     async simulateBotClicks() {
         if (this.store.getPhase() !== "playing") return;
 
-        // Verrou distribue : une seule instance fait tourner les bots
         const acquired = await this.store.acquireLock('bot_loop', 1000);
         if (!acquired) return;
 
         try {
             this.store.getPlayers().forEach(player => {
-                if (player.isBot) {
-                    if (Math.random() > 0.3) {
-                        this.handleBotClick(player);
+                if (player.isBot && Math.random() > 0.3) {
+                    if (this.store.getGauge(player.team) < this.store.getMaxGauge()) {
+                        this._applyValidClick(player);
                     }
                 }
             });
@@ -265,13 +233,17 @@ class GameServer {
         }
     }
 
-    handleBotClick(player) {
-        if (this.store.getGauge(player.team) >= this.store.getMaxGauge()) return;
-
+    /**
+     * Applique un clic valide (shared between handleClick and bot clicks)
+     */
+    _applyValidClick(player) {
         this.store.incrementGauge(player.team);
+        this.store.incrementClickStat('validated');
         player.score++;
         this.store.updatePlayerScore(player.id, player.score);
-        player.clickHistory.push(Date.now());
+        if (player.clickHistory.length < 50) {
+            player.clickHistory.push(Date.now());
+        }
 
         const winner = this.checkVictory();
         if (winner) {
@@ -324,36 +296,12 @@ class GameServer {
         return this.store.getPlayer(playerId);
     }
 
-    /**
-     * Retourne tous les joueurs
-     */
-    getAllPlayers() {
-        return this.store.getPlayers();
-    }
+    /** Retourne tous les joueurs */
+    getAllPlayers() { return this.store.getPlayers(); }
 
-    /**
-     * Retourne les donnees d'une equipe (objet de compat)
-     */
-    getTeamData(team) {
-        return {
-            gauge: this.store.getGauge(team),
-            players: this.store.getPlayers(team)
-        };
-    }
-
-    /**
-     * Ajout direct de joueur (utilise par les tests)
-     */
-    addPlayer(playerData) {
-        this.store.addPlayer(playerData);
-    }
-
-    /**
-     * Retrait direct de joueur (utilise par les tests)
-     */
-    removePlayer(playerId) {
-        this.store.removePlayer(playerId);
-    }
+    /** Ajout/retrait direct de joueur (utilise par les tests) */
+    addPlayer(playerData) { this.store.addPlayer(playerData); }
+    removePlayer(playerId) { this.store.removePlayer(playerId); }
 
     /**
      * Declenche la victoire avec verrou distribue (multi-instances safe)
@@ -391,24 +339,29 @@ class GameServer {
     }
 
     /**
+     * Construit le message d'etat (shared between send and broadcast)
+     */
+    _buildStateMessage() {
+        return {
+            type: "state_update",
+            teamAGauge: this.store.getGauge('A'),
+            teamBGauge: this.store.getGauge('B'),
+            maxGauge: this.store.getMaxGauge(),
+            players: this.store.getPlayers(),
+            phase: this.store.getPhase(),
+            instanceId: this.shortId,
+            timestamp: Date.now()
+        };
+    }
+
+    /**
      * Envoie l'etat complet a un client specifique
      */
     sendStateToClient(clientId) {
         const client = this.clients.get(clientId);
         if (!client || !client.ws) return;
-
-        const message = {
-            type: "state_update",
-            teamAGauge: this.store.getGauge('A'),
-            teamBGauge: this.store.getGauge('B'),
-            players: this.store.getPlayers(),
-            phase: this.store.getPhase(),
-            instanceId: this.instanceId.slice(0, 8),
-            timestamp: Date.now()
-        };
-
         try {
-            client.ws.send(JSON.stringify(message));
+            client.ws.send(JSON.stringify(this._buildStateMessage()));
         } catch (error) {
             console.error(`${this.TAG} Send error to ${clientId}:`, error.message);
         }
@@ -432,19 +385,7 @@ class GameServer {
 
         this.lastBroadcast = now;
         this.pendingBroadcast = null;
-
-        const message = {
-            type: "state_update",
-            teamAGauge: this.store.getGauge('A'),
-            teamBGauge: this.store.getGauge('B'),
-            maxGauge: this.store.getMaxGauge(),
-            players: this.store.getPlayers(),
-            phase: this.store.getPhase(),
-            instanceId: this.instanceId.slice(0, 8),
-            timestamp: now
-        };
-
-        this.broadcast(message);
+        this.broadcast(this._buildStateMessage());
     }
 
     /**
@@ -461,7 +402,7 @@ class GameServer {
             finalScores: this.store.getPlayers(),
             clickStats: clickStats,
             latencyWindowMs: this.LATENCY_WINDOW_MS,
-            instanceId: this.instanceId.slice(0, 8),
+            instanceId: this.shortId,
             timestamp: Date.now()
         };
 
@@ -482,7 +423,7 @@ class GameServer {
             players: this.store.getPlayers(),
             phase: this.store.getPhase(),
             maxGauge: this.store.getMaxGauge(),
-            instanceId: this.instanceId.slice(0, 8),
+            instanceId: this.shortId,
             timestamp: Date.now()
         };
 
@@ -608,50 +549,42 @@ class GameServer {
     }
 
     /**
+     * Compute percentile stats from an array of numbers
+     */
+    static _percentileStats(values) {
+        if (values.length === 0) return null;
+        const sorted = [...values].sort((a, b) => a - b);
+        const p = (pct) => Math.round(sorted[Math.min(Math.floor(sorted.length * pct), sorted.length - 1)]);
+        return {
+            avg: Math.round(values.reduce((a, b) => a + b, 0) / values.length),
+            min: Math.round(Math.min(...values)),
+            max: Math.round(Math.max(...values)),
+            p95: p(0.95),
+            p99: p(0.99),
+            count: values.length
+        };
+    }
+
+    /**
      * Retourne les statistiques du serveur (pour le dashboard)
      */
     getStats() {
-        const allPlayersWithHistory = [
-            ...this.store.getPlayers(),
-            ...this.store.getDisconnectedPlayers()
-        ];
-
-        // Agreger les rapports de latence
-        let latencyStats = null;
+        // Latency stats
         const reports = Array.from(this.store.getLatencyReports().values());
-        if (reports.length > 0) {
-            const avgValues = reports.map(r => r.avgRtt);
-            const minValues = reports.map(r => r.minRtt);
-            const maxValues = reports.map(r => r.maxRtt);
-            const sorted = [...avgValues].sort((a, b) => a - b);
-            const p95idx = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
-            const p99idx = Math.min(Math.floor(sorted.length * 0.99), sorted.length - 1);
+        const latencyRaw = GameServer._percentileStats(reports.map(r => r.avgRtt));
+        const latencyStats = latencyRaw ? {
+            avgRtt: latencyRaw.avg, minRtt: Math.round(Math.min(...reports.map(r => r.minRtt))),
+            maxRtt: Math.round(Math.max(...reports.map(r => r.maxRtt))),
+            p95Rtt: latencyRaw.p95, p99Rtt: latencyRaw.p99, botCount: latencyRaw.count
+        } : null;
 
-            latencyStats = {
-                avgRtt: Math.round(avgValues.reduce((a, b) => a + b, 0) / avgValues.length),
-                minRtt: Math.round(Math.min(...minValues)),
-                maxRtt: Math.round(Math.max(...maxValues)),
-                p95Rtt: Math.round(sorted[p95idx]),
-                p99Rtt: Math.round(sorted[p99idx]),
-                botCount: reports.length
-            };
-        }
-
-        // Stats de delai de notification de victoire
-        let victoryNotifStats = null;
-        const delays = this.store.getVictoryNotifDelays();
-        if (delays.length > 0) {
-            const delayValues = delays.map(d => d.delay);
-            const sorted = [...delayValues].sort((a, b) => a - b);
-            const p95idx = Math.min(Math.floor(sorted.length * 0.95), sorted.length - 1);
-            victoryNotifStats = {
-                avgDelay: Math.round(delayValues.reduce((a, b) => a + b, 0) / delayValues.length),
-                minDelay: Math.round(Math.min(...delayValues)),
-                maxDelay: Math.round(Math.max(...delayValues)),
-                p95Delay: Math.round(sorted[p95idx]),
-                botCount: delayValues.length
-            };
-        }
+        // Victory notif stats
+        const delays = this.store.getVictoryNotifDelays().map(d => d.delay);
+        const notifRaw = GameServer._percentileStats(delays);
+        const victoryNotifStats = notifRaw ? {
+            avgDelay: notifRaw.avg, minDelay: notifRaw.min, maxDelay: notifRaw.max,
+            p95Delay: notifRaw.p95, botCount: notifRaw.count
+        } : null;
 
         return {
             phase: this.store.getPhase(),
@@ -659,13 +592,13 @@ class GameServer {
             players: this.store.getPlayerCount(),
             teamAGauge: this.store.getGauge('A'),
             teamBGauge: this.store.getGauge('B'),
-            playersList: allPlayersWithHistory,
+            playersList: [...this.store.getPlayers(), ...this.store.getDisconnectedPlayers()],
             clickStats: this.store.getClickStats(),
             maxGauge: this.store.getMaxGauge(),
             victoryBroadcastMs: this.store.getVictoryBroadcastMs(),
             latencyStats,
             victoryNotifStats,
-            instanceId: this.instanceId.slice(0, 8)
+            instanceId: this.shortId
         };
     }
 }

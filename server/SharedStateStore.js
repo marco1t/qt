@@ -148,15 +148,13 @@ class MemoryStore {
     acquireLock(_key) { return true; }
     releaseLock(_key) { }
 
-    // --- Reset complet ---
-    resetGame() {
-        this.setPhase('lobby');
+    // --- Reset logic (shared between resetGame and startGame) ---
+    _resetState() {
         this.setGauge('A', 0);
         this.setGauge('B', 0);
         this.setWinner(null);
         this.resetClickStats();
         this.setVictoryTime(null);
-        this.clearDisconnectedPlayers();
         this.clearLatencyReports();
         this.clearVictoryNotifDelays();
         this.getPlayers().forEach(p => {
@@ -165,19 +163,15 @@ class MemoryStore {
         });
     }
 
+    resetGame() {
+        this.setPhase('lobby');
+        this._resetState();
+        this.clearDisconnectedPlayers();
+    }
+
     startGame() {
         this.setPhase('playing');
-        this.setGauge('A', 0);
-        this.setGauge('B', 0);
-        this.setWinner(null);
-        this.resetClickStats();
-        this.setVictoryTime(null);
-        this.clearLatencyReports();
-        this.clearVictoryNotifDelays();
-        this.getPlayers().forEach(p => {
-            p.score = 0;
-            p.clickHistory = [];
-        });
+        this._resetState();
     }
 }
 

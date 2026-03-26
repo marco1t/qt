@@ -15,18 +15,18 @@
 
 const WebSocket = require('ws');
 
+// --- Mode production (WSS) ou local (WS) ---
+// Usage prod :  SERVER_URL=wss://clickwars-ws.3sigma-studios.com node demo-live.js
+// Usage local : node demo-live.js   (par defaut localhost:7777 et 7778)
+const SERVER_URL = process.env.SERVER_URL || null;
 const PORT1 = parseInt(process.env.PORT1 || '7777');
 const PORT2 = parseInt(process.env.PORT2 || '7778');
 const BOTS_PAR_EQUIPE = parseInt(process.env.BOTS || '5');
-const MAX_GAUGE = parseInt(process.env.MAX_GAUGE || '999999'); // Tres grand pour que ca dure longtemps
+const MAX_GAUGE = parseInt(process.env.MAX_GAUGE || '2000'); // ~90 secondes avec 10 bots
 const DELAY_MIN = parseInt(process.env.DELAY_MIN || '80');   // ms entre chaque clic
 const DELAY_MAX = parseInt(process.env.DELAY_MAX || '300');
 
-const C = {
-    reset: '\x1b[0m', bold: '\x1b[1m',
-    red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m',
-    blue: '\x1b[34m', cyan: '\x1b[36m', magenta: '\x1b[35m',
-};
+const C = require('./cli-colors');
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
@@ -37,20 +37,26 @@ console.log('║  🎮  DEMO LIVE — ClickWars Multi-Instances                 
 console.log('║  Simulation continue sur 2 serveurs independants            ║');
 console.log('╚══════════════════════════════════════════════════════════════╝');
 console.log(C.reset);
-console.log(`  Instance 1 → port ${C.yellow}${PORT1}${C.reset}   (ouvre dashboard sur ${C.cyan}localhost:3000${C.reset})`);
-console.log(`  Instance 2 → port ${C.yellow}${PORT2}${C.reset}   (ouvre dashboard sur ${C.cyan}localhost:3001${C.reset})`);
+if (SERVER_URL) {
+    console.log(`  ${C.green}MODE PRODUCTION${C.reset} → ${C.yellow}${SERVER_URL}${C.reset}`);
+    console.log(`  Dashboard : ${C.cyan}https://clickwars.3sigma-studios.com${C.reset}`);
+} else {
+    console.log(`  ${C.yellow}MODE LOCAL${C.reset}`);
+    console.log(`  Instance 1 → port ${C.yellow}${PORT1}${C.reset}   (dashboard ${C.cyan}localhost:3000${C.reset})`);
+    console.log(`  Instance 2 → port ${C.yellow}${PORT2}${C.reset}   (dashboard ${C.cyan}localhost:3001${C.reset})`);
+}
 console.log(`  Bots par equipe : ${BOTS_PAR_EQUIPE}`);
-console.log(`  Objectif jauge  : ${MAX_GAUGE.toLocaleString()} clics (tres grand = la demo dure longtemps)`);
+console.log(`  Objectif jauge  : ${MAX_GAUGE.toLocaleString()} clics`);
 console.log(`  Arret : Ctrl+C\n`);
 
 // ─── Connexion WebSocket ───────────────────────────────────────────
-function connect(port, label) {
+function connect(url, label) {
     return new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://localhost:${port}`);
+        const ws = new WebSocket(url);
         ws.label = label;
         ws.on('open', () => resolve(ws));
-        ws.on('error', (e) => reject(new Error(`${label} (port ${port}) inaccessible : ${e.message}\n  → Lance le serveur avec : REDIS_URL=redis://127.0.0.1:6379 GAME_PORT=${port} DASHBOARD_PORT=${port === PORT1 ? 3000 : 3001} node websocket-server.js`)));
-        setTimeout(() => reject(new Error(`${label} timeout`)), 5000);
+        ws.on('error', (e) => reject(new Error(`${label} (${url}) inaccessible : ${e.message}`)));
+        setTimeout(() => reject(new Error(`${label} timeout`)), 10000);
     });
 }
 
@@ -87,18 +93,31 @@ function startBotClicker(ws, bot, color, label) {
     setTimeout(click, rand(0, 300)); // decalage initial aleatoire
 }
 
+let globalWs1 = null;
+
 async function run() {
-    // ─── 1. Connexion aux 2 instances ───
+    // ─── 1. Connexion au(x) serveur(s) ───
     let ws1, ws2;
     try {
-        process.stdout.write('  Connexion aux 2 instances... ');
-        [ws1, ws2] = await Promise.all([
-            connect(PORT1, 'Instance 1'),
-            connect(PORT2, 'Instance 2'),
-        ]);
-        console.log(`${C.green}✅${C.reset}`);
+        if (SERVER_URL) {
+            // Production : 2 connexions au meme serveur (le load balancer distribue)
+            process.stdout.write(`  Connexion a ${SERVER_URL}... `);
+            [ws1, ws2] = await Promise.all([
+                connect(SERVER_URL, 'Conn 1'),
+                connect(SERVER_URL, 'Conn 2'),
+            ]);
+        } else {
+            // Local : 2 ports differents
+            process.stdout.write('  Connexion aux 2 instances locales... ');
+            [ws1, ws2] = await Promise.all([
+                connect(`ws://localhost:${PORT1}`, 'Instance 1'),
+                connect(`ws://localhost:${PORT2}`, 'Instance 2'),
+            ]);
+        }
+        globalWs1 = ws1;
+        console.log(`${C.green}OK${C.reset}`);
     } catch (e) {
-        console.log(`\n${C.red}❌ ${e.message}${C.reset}\n`);
+        console.log(`\n${C.red}ERREUR ${e.message}${C.reset}\n`);
         process.exit(1);
     }
 
@@ -157,10 +176,14 @@ async function run() {
     console.log(`\n${C.bold}${C.green}  ✅ Demo lancee !${C.reset}`);
     console.log(`  ${C.blue}Bots A${C.reset} (Instance 1) : ${botsA.map(b => b.name).join(', ') || 'simulation directe'}`);
     console.log(`  ${C.red}Bots B${C.reset} (Instance 2) : ${botsB.map(b => b.name).join(', ') || 'simulation directe'}`);
-    console.log(`\n  ${C.cyan}Ouvre les dashboards dans le navigateur :${C.reset}`);
-    console.log(`    ${C.yellow}http://localhost:3000${C.reset}  ← Instance 1`);
-    console.log(`    ${C.yellow}http://localhost:3001${C.reset}  ← Instance 2`);
-    console.log(`\n  Les deux dashboards doivent afficher le MEME etat en temps reel.`);
+    if (SERVER_URL) {
+        console.log(`\n  ${C.cyan}Ouvre le dashboard :${C.reset}`);
+        console.log(`    ${C.yellow}https://clickwars.3sigma-studios.com${C.reset}`);
+    } else {
+        console.log(`\n  ${C.cyan}Ouvre les dashboards :${C.reset}`);
+        console.log(`    ${C.yellow}http://localhost:3000${C.reset}  ← Instance 1`);
+        console.log(`    ${C.yellow}http://localhost:3001${C.reset}  ← Instance 2`);
+    }
     console.log(`  Arret : ${C.bold}Ctrl+C${C.reset}\n`);
 
     // ─── 7. Lancer les clics continus ───
@@ -187,15 +210,8 @@ async function run() {
             }
             if (msg.type === 'victory') {
                 console.log(`\n\n${C.bold}${C.green}  VICTOIRE EQUIPE ${msg.winner} !${C.reset}`);
-                console.log(`  Les 2 instances ont detecte le meme gagnant.`);
-                console.log(`  Reset en cours...\n`);
-                setTimeout(() => {
-                    ws1.send(JSON.stringify({ type: 'reset_game' }));
-                    setTimeout(() => {
-                        ws1.send(JSON.stringify({ type: 'start_game' }));
-                        console.log(`  Nouvelle partie lancee automatiquement.\n`);
-                    }, 1000);
-                }, 2000);
+                console.log(`  Les clics continuent mais sont maintenant REJETES.`);
+                console.log(`  Pour relancer : ${C.yellow}node reset.js${C.reset} puis ${C.yellow}node demo-live.js${C.reset}\n`);
             }
         } catch(e) {}
     });
@@ -228,8 +244,9 @@ async function run() {
             if (lastGhostName && Math.random() > 0.5) {
                 const name = lastGhostName;
                 const rPort = lastGhostPort || port;
-                console.log(`  ${C.yellow}[lifecycle] Reconnecting ${name} to port ${rPort}...${C.reset}`);
-                const ws = new WebSocket(`ws://localhost:${rPort}`);
+                const ghostUrl = SERVER_URL || `ws://localhost:${rPort}`;
+                console.log(`  ${C.yellow}[lifecycle] Reconnecting ${name}...${C.reset}`);
+                const ws = new WebSocket(ghostUrl);
                 ws.on('open', () => {
                     ws.send(JSON.stringify({ type: 'player_join', playerId: `ghost_${++ghostCounter}`, name: name }));
                     lastGhostWs = ws;
@@ -251,8 +268,9 @@ async function run() {
                 // New player scenario
                 const name = ghostNames[ghostCounter % ghostNames.length];
                 ghostCounter++;
-                console.log(`  ${C.green}[lifecycle] New player ${name} connecting to port ${port}...${C.reset}`);
-                const ws = new WebSocket(`ws://localhost:${port}`);
+                const ghostUrl = SERVER_URL || `ws://localhost:${port}`;
+                console.log(`  ${C.green}[lifecycle] New player ${name} connecting...${C.reset}`);
+                const ws = new WebSocket(ghostUrl);
                 ws.on('open', () => {
                     ws.send(JSON.stringify({ type: 'player_join', playerId: `ghost_${ghostCounter}`, name: name }));
                     lastGhostWs = ws;
@@ -294,3 +312,23 @@ process.on('SIGINT', () => {
     console.log(`\n\n  ${C.yellow}Demo arretee.${C.reset}\n`);
     process.exit(0);
 });
+
+// ─── Touche R = reset a distance ─────────────────────────────────
+if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data', (key) => {
+        if (key.toString() === 'r' || key.toString() === 'R') {
+            console.log(`\n  ${C.yellow}[remote] Reset + nouvelle partie...${C.reset}`);
+            if (globalWs1 && globalWs1.readyState === WebSocket.OPEN) {
+                globalWs1.send(JSON.stringify({ type: 'reset_game' }));
+                setTimeout(() => {
+                    globalWs1.send(JSON.stringify({ type: 'start_game' }));
+                    console.log(`  ${C.green}[remote] Nouvelle partie lancee.${C.reset}`);
+                }, 1000);
+            }
+        }
+        if (key.toString() === '\u0003') process.exit(0); // Ctrl+C
+    });
+    console.log(`  ${C.cyan}Tip: appuie sur ${C.bold}R${C.reset}${C.cyan} pour reset la partie a distance${C.reset}\n`);
+}
