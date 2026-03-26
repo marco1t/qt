@@ -23,19 +23,116 @@ const path = require('path');
 const crypto = require('crypto');
 const GameServer = require('./GameServer');
 const { createStore } = require('./SharedStateStore');
+const createLogger = require('./Logger');
 
 const GAME_PORT = parseInt(process.env.GAME_PORT || '7777', 10);
 const DASHBOARD_PORT = parseInt(process.env.DASHBOARD_PORT || '3000', 10);
 const INSTANCE_ID = process.env.INSTANCE_ID || crypto.randomUUID();
 
 const TAG = `[instance:${INSTANCE_ID.slice(0, 8)}]`;
-console.log(`${TAG} Starting up`);
+const logger = createLogger(INSTANCE_ID);
+logger.info('startup', { gamePort: GAME_PORT, dashboardPort: DASHBOARD_PORT });
 
 // --- 1. Creer le store ---
 const store = createStore(INSTANCE_ID);
 
+// --- Metrics tracking for Prometheus ---
+let totalMessagesReceived = 0;
+let messageLatencySum = 0;
+let messageLatencyCount = 0;
+
+function generateMetrics() {
+    const mem = process.memoryUsage();
+    const cpu = process.cpuUsage();
+    const stats = gameServer ? gameServer.getStats() : {};
+    const uptime = Math.floor((Date.now() - startTime) / 1000);
+    const avgLatency = messageLatencyCount > 0 ? (messageLatencySum / messageLatencyCount).toFixed(3) : 0;
+
+    return [
+        '# HELP clickwars_connected_players Number of currently connected players',
+        '# TYPE clickwars_connected_players gauge',
+        `clickwars_connected_players{instance="${INSTANCE_ID.slice(0,8)}"} ${stats.clients || 0}`,
+        '',
+        '# HELP clickwars_total_players Total players in game (including bots)',
+        '# TYPE clickwars_total_players gauge',
+        `clickwars_total_players{instance="${INSTANCE_ID.slice(0,8)}"} ${stats.players || 0}`,
+        '',
+        '# HELP clickwars_messages_per_second Messages received per second',
+        '# TYPE clickwars_messages_per_second gauge',
+        `clickwars_messages_per_second{instance="${INSTANCE_ID.slice(0,8)}"} ${messagesPerSecond}`,
+        '',
+        '# HELP clickwars_messages_total Total messages received since startup',
+        '# TYPE clickwars_messages_total counter',
+        `clickwars_messages_total{instance="${INSTANCE_ID.slice(0,8)}"} ${totalMessagesReceived}`,
+        '',
+        '# HELP clickwars_message_latency_ms Average message handling latency in ms',
+        '# TYPE clickwars_message_latency_ms gauge',
+        `clickwars_message_latency_ms{instance="${INSTANCE_ID.slice(0,8)}"} ${avgLatency}`,
+        '',
+        '# HELP clickwars_memory_rss_bytes Resident set size in bytes',
+        '# TYPE clickwars_memory_rss_bytes gauge',
+        `clickwars_memory_rss_bytes{instance="${INSTANCE_ID.slice(0,8)}"} ${mem.rss}`,
+        '',
+        '# HELP clickwars_memory_heap_used_bytes Heap used in bytes',
+        '# TYPE clickwars_memory_heap_used_bytes gauge',
+        `clickwars_memory_heap_used_bytes{instance="${INSTANCE_ID.slice(0,8)}"} ${mem.heapUsed}`,
+        '',
+        '# HELP clickwars_memory_heap_total_bytes Heap total in bytes',
+        '# TYPE clickwars_memory_heap_total_bytes gauge',
+        `clickwars_memory_heap_total_bytes{instance="${INSTANCE_ID.slice(0,8)}"} ${mem.heapTotal}`,
+        '',
+        '# HELP clickwars_cpu_user_microseconds CPU user time in microseconds',
+        '# TYPE clickwars_cpu_user_microseconds counter',
+        `clickwars_cpu_user_microseconds{instance="${INSTANCE_ID.slice(0,8)}"} ${cpu.user}`,
+        '',
+        '# HELP clickwars_cpu_system_microseconds CPU system time in microseconds',
+        '# TYPE clickwars_cpu_system_microseconds counter',
+        `clickwars_cpu_system_microseconds{instance="${INSTANCE_ID.slice(0,8)}"} ${cpu.system}`,
+        '',
+        '# HELP clickwars_uptime_seconds Server uptime in seconds',
+        '# TYPE clickwars_uptime_seconds counter',
+        `clickwars_uptime_seconds{instance="${INSTANCE_ID.slice(0,8)}"} ${uptime}`,
+        '',
+        '# HELP clickwars_clicks_total Total clicks received',
+        '# TYPE clickwars_clicks_total counter',
+        `clickwars_clicks_total{instance="${INSTANCE_ID.slice(0,8)}"} ${(stats.clickStats && stats.clickStats.total) || 0}`,
+        '',
+        '# HELP clickwars_clicks_validated Total validated clicks',
+        '# TYPE clickwars_clicks_validated counter',
+        `clickwars_clicks_validated{instance="${INSTANCE_ID.slice(0,8)}"} ${(stats.clickStats && stats.clickStats.validated) || 0}`,
+        '',
+        '# HELP clickwars_clicks_rejected Total rejected clicks',
+        '# TYPE clickwars_clicks_rejected counter',
+        `clickwars_clicks_rejected{instance="${INSTANCE_ID.slice(0,8)}"} ${(stats.clickStats && stats.clickStats.rejected) || 0}`,
+        '',
+        '# HELP clickwars_gauge_a Current gauge value for Team A',
+        '# TYPE clickwars_gauge_a gauge',
+        `clickwars_gauge_a{instance="${INSTANCE_ID.slice(0,8)}"} ${stats.teamAGauge || 0}`,
+        '',
+        '# HELP clickwars_gauge_b Current gauge value for Team B',
+        '# TYPE clickwars_gauge_b gauge',
+        `clickwars_gauge_b{instance="${INSTANCE_ID.slice(0,8)}"} ${stats.teamBGauge || 0}`,
+        '',
+        '# HELP clickwars_connection_events_total Connection lifecycle events by type',
+        '# TYPE clickwars_connection_events_total counter',
+        `clickwars_connection_events_total{instance="${INSTANCE_ID.slice(0,8)}",type="connect"} ${connectionEventCounts.connect}`,
+        `clickwars_connection_events_total{instance="${INSTANCE_ID.slice(0,8)}",type="disconnect"} ${connectionEventCounts.disconnect}`,
+        `clickwars_connection_events_total{instance="${INSTANCE_ID.slice(0,8)}",type="reconnect"} ${connectionEventCounts.reconnect}`,
+        `clickwars_connection_events_total{instance="${INSTANCE_ID.slice(0,8)}",type="error"} ${connectionEventCounts.error}`,
+        '',
+    ].join('\n');
+}
+
 // --- 2. Serveur HTTP pour le Dashboard ---
 const httpServer = http.createServer((req, res) => {
+    if (req.url === '/metrics') {
+        res.writeHead(200, {
+            'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
+            'Cache-Control': 'no-cache'
+        });
+        res.end(generateMetrics());
+        return;
+    }
     if (req.url === '/' || req.url === '/index.html') {
         fs.readFile(path.join(__dirname, 'dashboard.html'), (err, data) => {
             if (err) {
@@ -53,7 +150,7 @@ const httpServer = http.createServer((req, res) => {
 });
 
 httpServer.listen(DASHBOARD_PORT, () => {
-    console.log(`${TAG} Dashboard on http://localhost:${DASHBOARD_PORT}`);
+    logger.info('dashboard_ready', { port: DASHBOARD_PORT, metricsUrl: `/metrics` });
 });
 
 // --- 3. Serveurs WebSocket ---
@@ -78,7 +175,7 @@ if (store.onBroadcastReceived !== undefined) {
                     client.ws.send(json);
                 }
             } catch (error) {
-                console.error(`${TAG} Relay broadcast error:`, error.message);
+                logger.error('relay_broadcast_error', { error: error.message });
             }
         });
     };
@@ -86,9 +183,9 @@ if (store.onBroadcastReceived !== undefined) {
     // Connecter au Redis si c'est un RedisStore
     if (store.connect) {
         store.connect().then(() => {
-            console.log(`${TAG} Redis pub/sub connected`);
+            logger.info('redis_connected', { url: process.env.REDIS_URL });
         }).catch(err => {
-            console.error(`${TAG} Redis connection failed:`, err.message);
+            logger.error('redis_connection_failed', { error: err.message });
         });
     }
 }
@@ -102,13 +199,24 @@ const connectionEvents = [];       // recent events (max 200)
 const MAX_EVENTS = 200;
 const knownClients = new Map();    // clientId -> { ip, connectedAt, playerName }
 const recentIPs = new Map();       // ip -> { clientId, playerName, disconnectedAt }
+const connectionEventCounts = { connect: 0, disconnect: 0, reconnect: 0, error: 0 };
 
 function addConnectionEvent(event) {
     event.timestamp = Date.now();
     event.instanceId = INSTANCE_ID.slice(0, 8);
     connectionEvents.push(event);
     if (connectionEvents.length > MAX_EVENTS) connectionEvents.shift();
-    console.log(`${TAG} [lifecycle] ${event.type}: ${event.summary}`);
+    if (connectionEventCounts[event.type] !== undefined) connectionEventCounts[event.type]++;
+    logger.info(`lifecycle:${event.type}`, {
+        clientId: event.clientId,
+        ip: event.ip,
+        ...(event.code && { code: event.code }),
+        ...(event.reason && { reason: event.reason }),
+        ...(event.sessionDuration && { sessionDuration: event.sessionDuration }),
+        ...(event.downtime && { downtime: event.downtime }),
+        ...(event.playerName && { playerName: event.playerName }),
+        summary: event.summary
+    });
 
     // Push to dashboard clients immediately
     const msg = JSON.stringify({ type: 'connection_event', event });
@@ -138,7 +246,7 @@ function closeReason(code) {
     return reasons[code] || `Unknown (${code})`;
 }
 
-console.log(`${TAG} Game server on port ${GAME_PORT}`);
+logger.info('game_server_ready', { port: GAME_PORT });
 
 // --- Logique Dashboard ---
 setInterval(async () => {
@@ -196,7 +304,7 @@ setInterval(async () => {
                 }
             }
         } catch (error) {
-            console.error(`${TAG} Stats aggregation error:`, error.message);
+            logger.error('stats_aggregation_error', { error: error.message });
         }
     }
 
@@ -268,7 +376,9 @@ gameWss.on('connection', (ws, req) => {
     }
 
     ws.on('message', (data) => {
+        const msgStart = Date.now();
         messagesPerSecond++;
+        totalMessagesReceived++;
 
         try {
             const message = JSON.parse(data.toString());
@@ -277,16 +387,22 @@ gameWss.on('connection', (ws, req) => {
             if (message.type === 'player_join' && message.name) {
                 const info = knownClients.get(clientId);
                 if (info) info.playerName = message.name;
+                logger.info('player_join', { clientId, playerName: message.name, playerId: message.playerId });
             }
 
             if (message.type !== 'click' && message.type !== 'ping' && message.type !== 'latency_report' && message.type !== 'victory_received') {
-                console.log(`${TAG} Message from ${clientId}:`, message.type || 'unknown');
+                logger.info('message', { clientId, type: message.type || 'unknown' });
             }
 
             gameServer.handleMessage(clientId, message);
 
+            // Track latency
+            const latency = Date.now() - msgStart;
+            messageLatencySum += latency;
+            messageLatencyCount++;
+
         } catch (error) {
-            console.error(`${TAG} JSON error:`, error.message);
+            logger.error('json_parse_error', { clientId, error: error.message });
         }
     });
 
@@ -340,7 +456,7 @@ gameWss.on('connection', (ws, req) => {
 
 // Arret propre
 process.on('SIGINT', async () => {
-    console.log(`\n${TAG} Shutting down gracefully...`);
+    logger.info('shutdown', { reason: 'SIGINT' });
     gameWss.close();
     dashboardWss.close();
     httpServer.close();

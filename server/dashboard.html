@@ -513,6 +513,7 @@
                 <div class="logs-stat"><span class="dot red"></span> <span id="logDiscCount">0</span> disconnects</div>
                 <div class="logs-stat"><span class="dot yellow"></span> <span id="logRecoCount">0</span> reconnects</div>
                 <div class="logs-stat"><span class="dot gray"></span> <span id="logErrCount">0</span> errors</div>
+                <button id="rawJsonBtn" onclick="toggleRawJson()" style="background:#2a2a3a;border:1px solid #3a3a4a;color:#888;padding:4px 12px;border-radius:6px;font-size:0.78em;font-weight:600;cursor:pointer;font-family:'Courier New',monospace;transition:all .2s">Raw JSON</button>
             </div>
         </div>
         <div class="log-feed" id="logFeed">
@@ -958,6 +959,29 @@
     }
 
     function logEntryHTML(ev) {
+        if (showRawJson) {
+            const jsonObj = {
+                ts: new Date(ev.timestamp).toISOString(),
+                level: ev.type === 'error' ? 'error' : 'info',
+                event: `lifecycle:${ev.type}`,
+                instanceId: ev.instanceId || '?',
+                clientId: ev.clientId,
+                ...(ev.ip && { ip: ev.ip }),
+                ...(ev.code && { code: ev.code }),
+                ...(ev.reason && { reason: ev.reason }),
+                ...(ev.playerName && { playerName: ev.playerName }),
+                ...(ev.sessionDuration && { sessionDuration: ev.sessionDuration }),
+                ...(ev.downtime && { downtime: ev.downtime }),
+                summary: ev.summary
+            };
+            const colorMap = { connect: '#22c55e', disconnect: '#ef4444', reconnect: '#f59e0b', error: '#64748b' };
+            const color = colorMap[ev.type] || '#888';
+            return `<div class="log-entry" style="font-family:'Courier New',monospace;font-size:0.8em;padding:6px 16px;border-bottom:1px solid #1a1a24">
+                <span style="color:${color};font-weight:bold;margin-right:8px">${ev.type.toUpperCase().padEnd(10)}</span>
+                <span style="color:#94a3b8">${escapeHtml(JSON.stringify(jsonObj))}</span>
+            </div>`;
+        }
+
         const icons = {
             connect: '+',
             disconnect: '-',
@@ -1031,6 +1055,20 @@
                 <span class="inst-stat">${uptimeStr}</span>
             </div>`;
         }).join('');
+    }
+
+    // ======================================================
+    // RAW JSON TOGGLE
+    // ======================================================
+    let showRawJson = false;
+
+    function toggleRawJson() {
+        showRawJson = !showRawJson;
+        const btn = document.getElementById('rawJsonBtn');
+        btn.style.background = showRawJson ? '#7c5cff33' : '#2a2a3a';
+        btn.style.color = showRawJson ? '#c4b5fd' : '#888';
+        btn.style.borderColor = showRawJson ? '#7c5cff' : '#3a3a4a';
+        renderLogFeed();
     }
 
     // Go
