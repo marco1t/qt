@@ -12,21 +12,23 @@
  */
 
 const crypto = require('crypto');
+const { DEFAULT_SESSION_ID, normalizeSessionId } = require('./SharedStateStore');
 
 class GameServer {
     /**
      * @param {object} store - Instance de MemoryStore ou RedisStore
      * @param {string} [instanceId] - ID unique de cette instance (pour le multi-instances)
      */
-    constructor(store, instanceId) {
+    constructor(store, instanceId, options = {}) {
         if (!store) {
             // Retrocompatibilite : si pas de store, creer un MemoryStore
             const { MemoryStore } = require('./SharedStateStore');
-            store = new MemoryStore();
+            store = new MemoryStore(options);
         }
 
         this.store = store;
         this.instanceId = instanceId || crypto.randomUUID();
+        this.sessionId = normalizeSessionId(options.sessionId || store.sessionId || DEFAULT_SESSION_ID);
         this.shortId = this.instanceId.slice(0, 8);
         this.TAG = `[instance:${this.shortId}]`;
         this.broadcastSeq = 0;
@@ -158,6 +160,7 @@ class GameServer {
         // Ajouter dans le store partage
         this.store.addPlayer(playerData);
 
+        this._sendSessionJoined(clientId, playerData.id, false);
         this.sendStateToClient(clientId);
         this._broadcastLobbyAndState();
     }
@@ -222,8 +225,27 @@ class GameServer {
             console.log(`${this.TAG} Player refreshed existing session: ${restoredPlayer.name} (${existingPlayer.id})`);
         }
 
+        this._sendSessionJoined(clientId, restoredPlayer.id, true);
         this.sendStateToClient(clientId);
         this._broadcastLobbyAndState();
+    }
+
+    _sendSessionJoined(clientId, playerId, restored) {
+        const client = this.clients.get(clientId);
+        if (!client || !client.ws || client.ws.readyState !== 1) return;
+
+        try {
+            client.ws.send(JSON.stringify({
+                type: 'session_joined',
+                sessionId: this.sessionId,
+                playerId,
+                instanceId: this.shortId,
+                restored: !!restored,
+                timestamp: Date.now()
+            }));
+        } catch (error) {
+            console.error(`${this.TAG} Session join ack error to ${clientId}:`, error.message);
+        }
     }
 
     _isWithinReconnectGrace(player) {
@@ -447,6 +469,7 @@ class GameServer {
             teamBGauge: this.store.getGauge('B'),
             maxGauge: this.store.getMaxGauge(),
             winner: this.store.getWinner(),
+            sessionId: this.sessionId,
             players
         };
 
@@ -473,6 +496,7 @@ class GameServer {
     _buildStateMessage() {
         return {
             type: "state_update",
+            sessionId: this.sessionId,
             teamAGauge: this.store.getGauge('A'),
             teamBGauge: this.store.getGauge('B'),
             maxGauge: this.store.getMaxGauge(),
@@ -529,6 +553,7 @@ class GameServer {
 
         const message = {
             type: "victory",
+            sessionId: this.sessionId,
             winner: winner,
             finalScores: this.store.getPlayers(),
             clickStats: clickStats,
@@ -552,6 +577,7 @@ class GameServer {
     broadcastLobbyUpdate() {
         const message = {
             type: "lobby_update",
+            sessionId: this.sessionId,
             players: this.store.getPlayers(),
             phase: this.store.getPhase(),
             maxGauge: this.store.getMaxGauge(),
@@ -731,7 +757,8 @@ class GameServer {
             latencyStats,
             victoryNotifStats,
             stateHash: this._buildStateHash(),
-            instanceId: this.shortId
+            instanceId: this.shortId,
+            sessionId: this.sessionId
         };
     }
 

@@ -1,128 +1,136 @@
-# ClickWars Territory - WebSocket Server
+# ClickWars Server & Stress Harness
 
-Serveur WebSocket pour le mode multijoueur de ClickWars Territory.
+Ce dossier contient le coeur utile du projet : un serveur WebSocket multi-instance et des simulateurs headless capables de stresser une application temps réel.
 
-## 🚀 Démarrage rapide
+Le vocabulaire de jeu sert à générer une charge réaliste :
 
-### 1. Installer les dépendances (première fois seulement)
+- joueurs = connexions WebSocket concurrentes ;
+- clics = actions gameplay haute fréquence ;
+- sessions = matches isolés par `sessionId` ;
+- victoire/lobby/state updates = broadcasts d'état à valider.
+
+Le client Qt/QML n'est pas requis pour lancer ni prouver les campagnes de charge.
+
+## Démarrage
+
+Installer :
 
 ```bash
-cd server
 npm install
 ```
 
-### 2. Lancer le serveur
+Démarrer une instance simple :
 
 ```bash
 npm start
 ```
 
-Ou avec un port personnalisé :
+Démarrer deux instances avec Redis :
 
 ```bash
-node websocket-server.js 8888
+REDIS_URL=redis://127.0.0.1:6379 GAME_PORT=7777 DASHBOARD_PORT=3000 INSTANCE_ID=inst-a node websocket-server.js
 ```
-
-## 📡 Utilisation
-
-1. **Lancer le serveur** dans un terminal
-2. **Lancer le jeu** ClickWars Territory
-3. Dans le jeu, aller sur **"Test Réseau"**
-4. **Mode Serveur** : Pas besoin, le serveur Node.js le fait !
-5. **Mode Client** : Se connecter à `127.0.0.1:7777`
-
-## 🔧 Configuration
-
-- **Port par défaut** : 7777
-- **Host** : 0.0.0.0 (accessible en LAN)
-
-## 📝 Logs
-
-Le serveur affiche :
-- ✅ Connexions/déconnexions de clients
-- 📨 Messages reçus et relayés
-- ❌ Erreurs éventuelles
-
-Appuyez sur **Ctrl+C** dans le terminal.
-
----
-
-## 🤖 Simulateur de Clics (Test de Performance)
-
-Le script `simulate-clicks.js` permet de simuler des clics de bots pour tester la performance du jeu sous charge.
-
-### Installation
-
-Les dépendances sont déjà installées avec `npm install` (utilise le même `ws` que le serveur).
-
-### Usage de base
 
 ```bash
-node simulate-clicks.js [equipe] [nombre_clics] [port]
+REDIS_URL=redis://127.0.0.1:6379 GAME_PORT=7778 DASHBOARD_PORT=3001 INSTANCE_ID=inst-b node websocket-server.js
 ```
 
-**Arguments:**
-- `equipe` - Équipe cible: `rouge`/`bleu` ou `A`/`B` (obligatoire)
-- `nombre_clics` - Nombre de clics à simuler (défaut: 100)
-- `port` - Port du serveur WebSocket (défaut: 7777)
+## Endpoints DevOps
 
-### Exemples
+- `GET /healthz` : process vivant.
+- `GET /readyz` : instance prête, Redis/default session initialisés.
+- `GET /metrics` : métriques Prometheus.
+- `GET /` : dashboard HTML historique.
 
-**Tester avec 10,000 clics pour l'équipe bleue:**
+Métriques importantes :
+
+- `clickwars_active_sessions`
+- `clickwars_sessions_created_total`
+- `clickwars_sessions_restored_total`
+- `clickwars_session_errors_total`
+- `clickwars_reconnect_attempts_total`
+- `clickwars_server_overloaded`
+- `clickwars_server_degraded`
+- `clickwars_messages_per_second`
+- `clickwars_clicks_total`
+
+## Stress Test Principal
+
 ```bash
-node simulate-clicks.js bleu 10000
+SERVER_URLS=ws://localhost:7777,ws://localhost:7778 \
+METRICS_URLS=http://localhost:3000/metrics,http://localhost:3001/metrics \
+PROFILE=smoke \
+SESSION_ID=default \
+REPORT_JSON=/tmp/clickwars-extreme-report.json \
+node extreme-stress-test.js
 ```
 
-**Tester avec 5,000 clics pour l'équipe rouge:**
+Profils :
+
+- `smoke` : validation rapide.
+- `aggressive` : forte charge réaliste.
+- `overload` : surcharge volontaire.
+
+Variables utiles :
+
+- `CLIENTS`
+- `WORKERS`
+- `RAMP_SEC`
+- `PEAK_SEC`
+- `DOWN_SEC`
+- `CLICK_HZ`
+- `BURST_SIZE`
+- `RECONNECT_PCT`
+- `RECONNECT_STORMS`
+- `SESSION_ID`
+- `REPORT_JSON`
+
+Le rapport JSON contient les preuves principales : connexions réussies, échecs, pic connecté, clics envoyés, messages reçus, reconnexions, duplications, gaps de séquence et divergences durables.
+
+## Sessions Et Routage
+
+Le serveur supporte un routage explicite par `sessionId`.
+
+- `sessionId` absent : compatibilité legacy, session `default`.
+- `create_session` : crée une session explicite.
+- `player_join` avec `sessionId` : rejoint une session existante.
+- `session_joined` : confirme la session, le joueur, l'instance et le statut restauré.
+- `session_error` : retourne `SESSION_NOT_FOUND`, `SESSION_CLOSED`, `SESSION_FULL` ou `SERVER_OVERLOADED`.
+
+Les snapshots Redis sont isolés par session avec des clés de type :
+
+```text
+clickwars:sessions:<sessionId>:state_snapshot
+```
+
+## Tests
+
+Régressions obligatoires :
+
 ```bash
-node simulate-clicks.js rouge 5000
+npm test
+node tests-multi-instance-local.js
+REDIS_URL=redis://127.0.0.1:6379 node tests-multi-instance.js
+REDIS_URL=redis://127.0.0.1:6379 REPORT_JSON=/tmp/clickwars-session-routing-report.json node tests-session-routing.js
 ```
 
-**Utiliser un port personnalisé:**
-```bash
-node simulate-clicks.js A 1000 8888
-```
+`tests-session-routing.js` prouve :
 
-**Afficher l'aide:**
-```bash
-node simulate-clicks.js --help
-```
+- compatibilité `default` ;
+- erreur propre sur session inconnue ;
+- isolation de deux sessions ;
+- restauration d'une session après perte d'instance ;
+- cohérence d'une session jointe depuis deux instances ;
+- absence de double store local lors de joins concurrents.
 
-### Scénario de test typique
+## Critères De Réussite
 
-1. **Lancer le serveur** dans un terminal:
-   ```bash
-   cd server
-   npm start
-   ```
+Une campagne est exploitable si :
 
-2. **Lancer le jeu** et démarrer une partie
-
-3. **Pendant que la partie est en cours**, ouvrir un **nouveau terminal** et simuler des clics:
-   ```bash
-   cd server
-   node simulate-clicks.js bleu 10000
-   ```
-
-4. **Observer** le comportement du jeu:
-   - La jauge bleue devrait monter rapidement
-   - Vérifier s'il y a des ralentissements
-   - Observer les logs du serveur pour détecter les erreurs
-
-### Fonctionnalités
-
-- ✅ Connexion automatique au serveur
-- ✅ Enregistrement comme bot joueur
-- ✅ Envoi massif de clics par paquets
-- ✅ Barre de progression en temps réel
-- ✅ Statistiques de performance (clics/seconde)
-- ✅ Support interruption (Ctrl+C)
-- ✅ Messages d'erreur détaillés
-
-### Notes importantes
-
-- Le serveur **doit être en cours d'exécution**
-- Le jeu doit être en phase **"playing"** pour que les clics comptent
-- Les clics sont envoyés par paquets de 100 toutes les 10ms
-- Le script se déconnecte automatiquement après l'envoi
-
+- aucun crash serveur non géré ;
+- rapport JSON généré ;
+- `Duplicate messages = 0` ;
+- `Sequence gaps = 0` hors déconnexions volontaires ;
+- `Durable divergence = 0` ;
+- `/readyz` reste OK sur les instances saines ;
+- les erreurs sous surcharge sont mesurées explicitement.

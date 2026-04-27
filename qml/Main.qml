@@ -85,6 +85,13 @@ ApplicationWindow {
         onConnected: {
             console.log("✅ Connecté au serveur !");
 
+            if (networkManager.restoredConnection) {
+                console.log("🔁 Reconnexion automatique restaurée");
+                networkManager.restoredConnection = false;
+                globalToast.show("✅ Reconnecté à la session");
+                return;
+            }
+
             // 1. Définir l'identité réseau (ID généré par NetworkManager)
             var netId = networkManager.localPlayerId;
             var isHost = gameStateInstance.isHost; // Déjà défini dans handleNavigation pour l'hôte
@@ -112,6 +119,11 @@ ApplicationWindow {
 
         onDisconnected: {
             console.log("❌ Déconnecté du serveur");
+
+            if (networkManager.networkStatus === "reconnecting") {
+                globalToast.show("🔄 Reconnexion en cours...");
+                return;
+            }
 
             // MVP Story 2.5: Si déconnecté alors qu'on n'est pas au menu → serveur/hôte a quitté
             if (navigator.currentItem && navigator.currentItem.toString().indexOf("GameScreen") !== -1) {
@@ -149,6 +161,20 @@ ApplicationWindow {
                 console.log("📋 Lobby update:", message.players.length, "joueurs");
                 gameStateInstance.syncLobbyFromServer(message.players);
                 break;
+            case "session_joined":
+                console.log("🔗 Session join:", message.sessionId, "restored=", message.restored);
+                break;
+            case "session_error":
+                console.warn("⚠️ Session error:", message.code, message.message);
+                globalToast.show("❌ " + (message.message || message.code));
+                break;
+            case "server_status":
+                if (message.status === "degraded") {
+                    globalToast.show("⚠️ Latence ou charge élevée");
+                } else if (message.status === "overloaded") {
+                    globalToast.show("⛔ Serveur surchargé");
+                }
+                break;
             default:
                 console.log("Message non géré:", JSON.stringify(message));
                 break;
@@ -158,6 +184,18 @@ ApplicationWindow {
         onConnectionError: function (error) {
             console.error("⚠️ Erreur réseau:", error);
             globalToast.show("❌ Erreur réseau: " + error);
+        }
+
+        onSessionError: function (code, message) {
+            globalToast.show("❌ " + (message || code));
+        }
+
+        onServerStatusChanged: function (status, reason) {
+            if (status === "degraded") {
+                globalToast.show("⚠️ Connexion dégradée");
+            } else if (status === "overloaded") {
+                globalToast.show("⛔ Serveur surchargé");
+            }
         }
     }
 
@@ -211,6 +249,38 @@ ApplicationWindow {
     // Toast notification global
     ToastNotification {
         id: globalToast
+    }
+
+    Rectangle {
+        visible: networkManager.networkStatus === "reconnecting"
+        z: 999
+        anchors.fill: parent
+        color: Qt.rgba(0, 0, 0, 0.55)
+
+        Column {
+            anchors.centerIn: parent
+            spacing: 12
+
+            BusyIndicator {
+                running: parent.visible
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+
+            Text {
+                text: "Reconnexion à la session..."
+                color: Theme.textPrimary
+                font.pixelSize: 24
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            Text {
+                text: "La partie reprend dès qu'une instance répond."
+                color: Theme.textSecondary
+                font.pixelSize: 16
+                horizontalAlignment: Text.AlignHCenter
+            }
+        }
     }
 
     // Écran Menu Principal
@@ -290,14 +360,14 @@ ApplicationWindow {
                 navigator.pop();
             }
 
-            onJoinServer: function (ip, port) {
+            onJoinServer: function (ip, port, sessionCode) {
                 console.log("🎮 Connexion à", ip + ":" + port);
 
                 // Story 3.2: Préparer la navigation vers le lobby
                 window.pendingNavigation = "lobby";
 
                 // Connecter au serveur via le NetworkManager global
-                window.globalNetwork.connectToServer(ip, port);
+                window.globalNetwork.connectToServer(ip, port, sessionCode);
 
             // Note: On ne fait plus navigator.pop() ici.
             // La navigation se fera dans onConnected.

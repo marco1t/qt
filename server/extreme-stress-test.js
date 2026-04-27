@@ -148,6 +148,7 @@ function pickConfig() {
         reconnectPct: envInt('RECONNECT_PCT', base.reconnectPct),
         reconnectStorms: envInt('RECONNECT_STORMS', base.reconnectStorms),
         maxGauge: envInt('MAX_GAUGE', base.maxGauge),
+        sessionId: process.env.SESSION_ID || 'default',
         reportJson: process.env.REPORT_JSON || path.join(__dirname, `extreme-stress-report-${nowIsoSafe()}.json`),
         sampleMs: envInt('SAMPLE_MS', 1000),
         stableWindowMs: envInt('STABLE_WINDOW_MS', 2000)
@@ -185,17 +186,22 @@ async function runMain() {
     console.log(` Phases       : ramp ${config.rampSec}s, peak ${config.peakSec}s, down ${config.downSec}s`);
     console.log(` Click load   : ${config.clickHz}Hz x burst ${config.burstSize} per client`);
     console.log(` Reconnects   : ${config.reconnectStorms} storms, ${config.reconnectPct}% clients/storm`);
+    console.log(` Session      : ${config.sessionId}`);
     console.log(` Report JSON  : ${config.reportJson}`);
     console.log('');
 
-    const admin = await openAdmin(config.serverUrls[0]);
-    sendJson(admin, { type: 'update_config', maxGauge: config.maxGauge });
+    const admin = await openAdmin(config.serverUrls[0], config);
+    if (config.sessionId !== 'default') {
+        sendJson(admin, { type: 'create_session', sessionId: config.sessionId });
+        await sleep(250);
+    }
+    sendJson(admin, { type: 'update_config', sessionId: config.sessionId, maxGauge: config.maxGauge });
     await sleep(250);
-    sendJson(admin, { type: 'reset_game' });
+    sendJson(admin, { type: 'reset_game', sessionId: config.sessionId });
     await sleep(250);
-    sendJson(admin, { type: 'update_config', maxGauge: config.maxGauge });
+    sendJson(admin, { type: 'update_config', sessionId: config.sessionId, maxGauge: config.maxGauge });
     await sleep(250);
-    sendJson(admin, { type: 'start_game' });
+    sendJson(admin, { type: 'start_game', sessionId: config.sessionId });
 
     const baseClientsPerWorker = Math.floor(config.clients / config.workers);
     let remainder = config.clients % config.workers;
@@ -350,7 +356,7 @@ function sampleConsistency(states, config) {
     };
 }
 
-function openAdmin(url) {
+function openAdmin(url, config) {
     return new Promise((resolve, reject) => {
         const ws = new WebSocket(url);
         const timeout = setTimeout(() => {
@@ -370,9 +376,9 @@ function openAdmin(url) {
                 const msg = parseJson(data);
                 if (msg.type === 'victory') {
                     setTimeout(() => {
-                        if (!sendJson(ws, { type: 'reset_game' })) return;
+                        if (!sendJson(ws, { type: 'reset_game', sessionId: config.sessionId })) return;
                         setTimeout(() => {
-                            sendJson(ws, { type: 'start_game' });
+                            sendJson(ws, { type: 'start_game', sessionId: config.sessionId });
                         }, 250);
                     }, 500);
                 }
@@ -515,6 +521,7 @@ function runWorker(data) {
     function sendJoin(client) {
         sendJson(client.ws, {
             type: 'player_join',
+            sessionId: config.sessionId,
             playerId: client.playerId,
             name: client.name
         });
@@ -548,6 +555,7 @@ function runWorker(data) {
         client.latestState = {
             clientId: client.id,
             serverUrl: client.url,
+            sessionId: msg.sessionId,
             type: msg.type,
             phase: msg.phase || (msg.type === 'victory' ? 'victory' : undefined),
             winner: msg.winner,
@@ -589,6 +597,7 @@ function runWorker(data) {
                 try {
                     sendJson(client.ws, {
                         type: 'click',
+                        sessionId: config.sessionId,
                         playerId: client.playerId
                     });
                     stats.clicksSent++;
