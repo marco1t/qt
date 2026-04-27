@@ -484,9 +484,100 @@ test('Deconnexion d\'un joueur sur instance 1 est refletee globalement', () => {
     // Alice se deconnecte (instance 1 la retire)
     gs1.removeClient('c1');
 
-    assert.strictEqual(store.getPlayerCount(), 1, 'Plus qu\'un joueur dans le store');
-    assert.strictEqual(gs2.getPlayer('alice'), null, 'Instance 2 ne voit plus Alice');
+    assert.strictEqual(store.getPlayerCount(), 2, 'Alice reste reservee pendant la grace');
+    assert.strictEqual(gs2.getPlayer('alice').isDisconnected, true, 'Instance 2 voit Alice deconnectee');
     assert.strictEqual(gs2.getPlayer('bob').name, 'Bob', 'Bob est toujours la');
+});
+
+test('Reconnexion sur la meme instance conserve equipe et score', () => {
+    const { gs1, store } = createSharedInstances();
+
+    gs1.addClient('c1', createMockWs());
+    gs1.handleMessage('c1', { type: 'player_join', playerId: 'alice', name: 'Alice' });
+    store.setMaxGauge(100);
+    gs1.handleMessage('c1', { type: 'start_game' });
+    gs1.handleMessage('c1', { type: 'click', playerId: 'alice' });
+    gs1.handleMessage('c1', { type: 'click', playerId: 'alice' });
+
+    gs1.removeClient('c1');
+    gs1.addClient('c1_reco', createMockWs());
+    gs1.handleMessage('c1_reco', { type: 'player_join', playerId: 'alice', name: 'Alice' });
+
+    const alice = gs1.getPlayer('alice');
+    assert.strictEqual(alice.team, 'A');
+    assert.strictEqual(alice.score, 2);
+    assert.strictEqual(alice.isDisconnected, false);
+});
+
+test('Reconnexion sur une autre instance conserve equipe et score', () => {
+    const { gs1, gs2, store } = createSharedInstances();
+
+    gs1.addClient('c1', createMockWs());
+    gs1.handleMessage('c1', { type: 'player_join', playerId: 'alice', name: 'Alice' });
+    store.setMaxGauge(100);
+    gs1.handleMessage('c1', { type: 'start_game' });
+    gs1.handleMessage('c1', { type: 'click', playerId: 'alice' });
+
+    gs1.removeClient('c1');
+    gs2.addClient('c2_reco', createMockWs());
+    gs2.handleMessage('c2_reco', { type: 'player_join', playerId: 'alice', name: 'Alice' });
+
+    const alice = gs2.getPlayer('alice');
+    assert.strictEqual(alice.team, 'A');
+    assert.strictEqual(alice.score, 1);
+    assert.strictEqual(alice.isDisconnected, false);
+});
+
+test('Deconnexion brute puis reconnexion pendant la victoire ne casse pas la session', () => {
+    const { gs1, gs2, store } = createSharedInstances();
+
+    gs1.addClient('c1', createMockWs());
+    gs2.addClient('c2', createMockWs());
+    gs1.handleMessage('c1', { type: 'player_join', playerId: 'alice', name: 'Alice' });
+    gs2.handleMessage('c2', { type: 'player_join', playerId: 'bob', name: 'Bob' });
+
+    store.setMaxGauge(2);
+    gs1.handleMessage('c1', { type: 'start_game' });
+    gs1.handleMessage('c1', { type: 'click', playerId: 'alice' });
+
+    gs2.removeClient('c2');
+    gs1.handleMessage('c1', { type: 'click', playerId: 'alice' });
+    assert.strictEqual(store.getPhase(), 'victory');
+
+    gs2.addClient('c2_reco', createMockWs());
+    gs2.handleMessage('c2_reco', { type: 'player_join', playerId: 'bob', name: 'Bob' });
+
+    const bob = gs2.getPlayer('bob');
+    assert.strictEqual(bob.team, 'B');
+    assert.strictEqual(bob.isDisconnected, false);
+    assert.strictEqual(gs2.store.getWinner(), 'A');
+});
+
+test('Reconnect storm conserve les sessions sans doublons', () => {
+    const { gs1, gs2, store } = createSharedInstances();
+    const totalPlayers = 8;
+
+    for (let i = 0; i < totalPlayers; i++) {
+        const gs = i % 2 === 0 ? gs1 : gs2;
+        const clientId = `c${i}`;
+        gs.addClient(clientId, createMockWs());
+        gs.handleMessage(clientId, { type: 'player_join', playerId: `p${i}`, name: `Player ${i}` });
+    }
+
+    for (let i = 0; i < totalPlayers; i++) {
+        const gs = i % 2 === 0 ? gs1 : gs2;
+        gs.removeClient(`c${i}`);
+    }
+
+    for (let i = 0; i < totalPlayers; i++) {
+        const gs = i % 2 === 0 ? gs2 : gs1;
+        gs.addClient(`reco${i}`, createMockWs());
+        gs.handleMessage(`reco${i}`, { type: 'player_join', playerId: `p${i}`, name: `Player ${i}` });
+    }
+
+    assert.strictEqual(store.getPlayerCount(), totalPlayers);
+    assert.strictEqual(new Set(store.getPlayers().map(p => p.id)).size, totalPlayers);
+    assert.ok(store.getPlayers().every(p => !p.isDisconnected));
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -497,8 +588,7 @@ setTimeout(() => {
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     allServers.forEach(gs => {
-        gs.stopBotLoop();
-        if (gs.pendingBroadcast) clearTimeout(gs.pendingBroadcast);
+        gs.shutdown();
     });
 
     if (failed === 0) {

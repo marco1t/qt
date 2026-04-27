@@ -21,32 +21,47 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const GameServer = require('./GameServer');
-const { createStore } = require('./SharedStateStore');
+const SessionManager = require('./SessionManager');
 const createLogger = require('./Logger');
 
 const GAME_PORT = parseInt(process.env.GAME_PORT || '7777', 10);
 const DASHBOARD_PORT = parseInt(process.env.DASHBOARD_PORT || '3000', 10);
 const INSTANCE_ID = process.env.INSTANCE_ID || crypto.randomUUID();
+const MAX_CLIENTS = parseInt(process.env.MAX_CLIENTS || '2000', 10);
+const DEGRADED_CLIENTS = parseInt(process.env.DEGRADED_CLIENTS || Math.floor(MAX_CLIENTS * 0.8), 10);
+const OVERLOAD_MPS = parseInt(process.env.OVERLOAD_MPS || '5000', 10);
+const DEGRADED_MPS = parseInt(process.env.DEGRADED_MPS || Math.floor(OVERLOAD_MPS * 0.8), 10);
 
 const SHORT_ID = INSTANCE_ID.slice(0, 8);
 const TAG = `[instance:${SHORT_ID}]`;
 const logger = createLogger(INSTANCE_ID);
 logger.info('startup', { gamePort: GAME_PORT, dashboardPort: DASHBOARD_PORT });
 
-// --- 1. Creer le store ---
-const store = createStore(INSTANCE_ID);
-
 // --- Metrics tracking for Prometheus ---
 let totalMessagesReceived = 0;
 let messageLatencySum = 0;
 let messageLatencyCount = 0;
 
+function getLoadStatus() {
+    const stats = sessionManager ? sessionManager.getStats() : {};
+    const clients = stats.clients || 0;
+    const mps = messagesPerSecond || 0;
+
+    if (clients >= MAX_CLIENTS || mps >= OVERLOAD_MPS) {
+        return { state: 'overloaded', reason: clients >= MAX_CLIENTS ? 'max_clients' : 'message_rate', load: { clients, mps, maxClients: MAX_CLIENTS, maxMps: OVERLOAD_MPS } };
+    }
+    if (clients >= DEGRADED_CLIENTS || mps >= DEGRADED_MPS) {
+        return { state: 'degraded', reason: clients >= DEGRADED_CLIENTS ? 'high_clients' : 'high_message_rate', load: { clients, mps, maxClients: MAX_CLIENTS, maxMps: OVERLOAD_MPS } };
+    }
+    return { state: 'healthy', reason: null, load: { clients, mps, maxClients: MAX_CLIENTS, maxMps: OVERLOAD_MPS } };
+}
+
 function generateMetrics() {
     const mem = process.memoryUsage();
     const cpu = process.cpuUsage();
-    const stats = gameServer ? gameServer.getStats() : {};
+    const stats = sessionManager ? sessionManager.getStats() : {};
     const cs = stats.clickStats || {};
+    const loadStatus = getLoadStatus();
     const uptime = Math.floor((Date.now() - startTime) / 1000);
     const avgLatency = messageLatencyCount > 0 ? (messageLatencySum / messageLatencyCount).toFixed(3) : 0;
 
@@ -68,6 +83,13 @@ function generateMetrics() {
         metric('clickwars_clicks_total',            'counter', 'Total clicks received',          cs.total || 0),
         metric('clickwars_clicks_validated',        'counter', 'Total validated clicks',         cs.validated || 0),
         metric('clickwars_clicks_rejected',         'counter', 'Total rejected clicks',          cs.rejected || 0),
+        metric('clickwars_active_sessions',         'gauge',   'Active game sessions',           stats.activeSessions || 0),
+        metric('clickwars_sessions_created_total',  'counter', 'Sessions created locally',       (stats.sessionMetrics && stats.sessionMetrics.sessionsCreated) || 0),
+        metric('clickwars_sessions_restored_total', 'counter', 'Sessions restored locally',      (stats.sessionMetrics && stats.sessionMetrics.sessionsRestored) || 0),
+        metric('clickwars_session_errors_total',    'counter', 'Session routing errors',         (stats.sessionMetrics && stats.sessionMetrics.sessionErrors) || 0),
+        metric('clickwars_reconnect_attempts_total', 'counter', 'Player session reconnect attempts', (stats.sessionMetrics && stats.sessionMetrics.reconnectAttempts) || 0),
+        metric('clickwars_server_overloaded',       'gauge',   'Server overload status',         loadStatus.state === 'overloaded' ? 1 : 0),
+        metric('clickwars_server_degraded',         'gauge',   'Server degraded status',         loadStatus.state === 'degraded' ? 1 : 0),
         metric('clickwars_gauge_a',                 'gauge',   'Gauge value for Team A',         stats.teamAGauge || 0),
         metric('clickwars_gauge_b',                 'gauge',   'Gauge value for Team B',         stats.teamBGauge || 0),
         '# HELP clickwars_connection_events_total Connection lifecycle events by type',
@@ -79,6 +101,17 @@ function generateMetrics() {
 
 // --- 2. Serveur HTTP pour le Dashboard ---
 const httpServer = http.createServer((req, res) => {
+    if (req.url === '/healthz') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', instanceId: SHORT_ID }));
+        return;
+    }
+    if (req.url === '/readyz') {
+        const ready = sessionManager && sessionManager.isReady();
+        res.writeHead(ready ? 200 : 503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: ready ? 'ready' : 'not_ready', instanceId: SHORT_ID }));
+        return;
+    }
     if (req.url === '/metrics') {
         res.writeHead(200, {
             'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
@@ -115,38 +148,24 @@ const gameWss = new WebSocket.Server({ port: GAME_PORT, host: '0.0.0.0' });
 // Serveur pour le DASHBOARD (greffe sur le serveur HTTP)
 const dashboardWss = new WebSocket.Server({ server: httpServer, path: '/dashboard' });
 
-// --- 4. Initialiser le GameServer avec le store ---
-const gameServer = new GameServer(store, INSTANCE_ID);
-
-// Si Redis est configure, ecouter les broadcasts des autres instances
-if (store.onBroadcastReceived !== undefined) {
-    store.onBroadcastReceived = (message) => {
-        // Relayer le broadcast aux clients locaux de cette instance
-        const json = JSON.stringify(message);
-        gameServer.clients.forEach((client) => {
-            try {
-                if (client.ws && client.ws.readyState === 1) {
-                    client.ws.send(json);
-                }
-            } catch (error) {
-                logger.error('relay_broadcast_error', { error: error.message });
-            }
-        });
-    };
-
-    // Connecter au Redis si c'est un RedisStore
-    if (store.connect) {
-        store.connect().then(() => {
-            logger.info('redis_connected', { url: process.env.REDIS_URL });
-        }).catch(err => {
-            logger.error('redis_connection_failed', { error: err.message });
-        });
-    }
-}
-
 // Metriques
 let messagesPerSecond = 0;
 const startTime = Date.now();
+
+// --- 4. Initialiser le SessionManager ---
+const sessionManager = new SessionManager({
+    instanceId: INSTANCE_ID,
+    redisUrl: process.env.REDIS_URL,
+    isOverloaded: () => getLoadStatus().state === 'overloaded'
+});
+
+let ready = false;
+sessionManager.initDefault().then(() => {
+    ready = true;
+    logger.info('sessions_ready', { defaultSession: 'default', redisUrl: process.env.REDIS_URL || null });
+}).catch(err => {
+    logger.error('sessions_ready_failed', { error: err.message });
+});
 
 // --- Connection lifecycle tracking ---
 const connectionEvents = [];       // recent events (max 200)
@@ -193,7 +212,8 @@ logger.info('game_server_ready', { port: GAME_PORT });
 
 // --- Logique Dashboard ---
 setInterval(async () => {
-    const stats = gameServer.getStats();
+    const stats = sessionManager.getStats();
+    const loadStatus = getLoadStatus();
     const used = process.memoryUsage().rss / 1024 / 1024;
     const localClients = stats.clients;
     const localMps = messagesPerSecond;
@@ -210,10 +230,11 @@ setInterval(async () => {
     }];
 
     // Agregation multi-instances via Redis
-    if (store.redis) {
+    const statsRedis = sessionManager.redis;
+    if (statsRedis) {
         try {
             // 1. Publier les stats locales de cette instance
-            await store.redis.hset('clickwars:instances:stats', INSTANCE_ID, JSON.stringify({
+            await statsRedis.hset('clickwars:instances:stats', INSTANCE_ID, JSON.stringify({
                 clients: localClients,
                 mps: localMps,
                 memory: used,
@@ -222,7 +243,7 @@ setInterval(async () => {
             }));
 
             // 2. Recuperer le total + liste des instances actives
-            const allStats = await store.redis.hgetall('clickwars:instances:stats');
+            const allStats = await statsRedis.hgetall('clickwars:instances:stats');
             totalClients = 0; totalMps = 0; totalMemory = 0;
             activeInstances = [];
             const now = Date.now();
@@ -243,7 +264,7 @@ setInterval(async () => {
                     });
                 } else {
                     // Nettoyer les vieilles instances
-                    store.redis.hdel('clickwars:instances:stats', id);
+                    statsRedis.hdel('clickwars:instances:stats', id);
                 }
             }
         } catch (error) {
@@ -267,6 +288,9 @@ setInterval(async () => {
         latencyStats: stats.latencyStats,
         victoryNotifStats: stats.victoryNotifStats,
         instanceId: stats.instanceId,
+        activeSessions: stats.activeSessions,
+        sessions: stats.sessions,
+        serverStatus: loadStatus.state,
         activeInstances: activeInstances,
         connectionEvents: connectionEvents.slice(-50)
     };
@@ -281,6 +305,9 @@ setInterval(async () => {
         // console.log(`Stats locales: ${localMps} mps`);
     }
     messagesPerSecond = 0;
+    if (loadStatus.state !== 'healthy') {
+        sessionManager.broadcastServerStatus(loadStatus);
+    }
 
 }, 1000);
 
@@ -296,7 +323,6 @@ gameWss.on('connection', (ws, req) => {
     const previousSession = recentIPs.get(ip);
     const isReconnect = previousSession && (connectedAt - previousSession.disconnectedAt < 30000);
 
-    gameServer.addClient(clientId, ws);
     knownClients.set(clientId, { ip, connectedAt, playerName: null });
 
     if (isReconnect) {
@@ -318,7 +344,7 @@ gameWss.on('connection', (ws, req) => {
         });
     }
 
-    ws.on('message', (data) => {
+    ws.on('message', async (data) => {
         const msgStart = Date.now();
         messagesPerSecond++;
         totalMessagesReceived++;
@@ -337,7 +363,7 @@ gameWss.on('connection', (ws, req) => {
                 logger.info('message', { clientId, type: message.type || 'unknown' });
             }
 
-            gameServer.handleMessage(clientId, message);
+            await sessionManager.handleMessage(clientId, ws, message);
 
             // Track latency
             const latency = Date.now() - msgStart;
@@ -350,9 +376,9 @@ gameWss.on('connection', (ws, req) => {
     });
 
     ws.on('close', (code, reason) => {
-        const player = gameServer.getPlayer(clientId);
+        const sessionInfo = sessionManager.getClientSessionInfo(clientId);
         const info = knownClients.get(clientId) || {};
-        const playerName = (player && player.name) || info.playerName || clientId;
+        const playerName = (sessionInfo && sessionInfo.playerName) || info.playerName || clientId;
         const sessionDuration = Date.now() - connectedAt;
 
         // Store for reconnection detection
@@ -362,7 +388,7 @@ gameWss.on('connection', (ws, req) => {
             disconnectedAt: Date.now()
         });
 
-        gameServer.removeClient(clientId);
+        const removedSession = sessionManager.removeClient(clientId);
         knownClients.delete(clientId);
 
         addConnectionEvent({
@@ -376,14 +402,17 @@ gameWss.on('connection', (ws, req) => {
             summary: `${playerName} disconnected — ${closeReason(code || 1005)} (session: ${Math.round(sessionDuration / 1000)}s)`
         });
 
-        gameServer.broadcast({
+        if (removedSession) {
+            sessionManager.broadcastToSession(removedSession.sessionId, {
             type: 'player_left',
-            playerId: clientId,
+            playerId: (removedSession && removedSession.playerId) || clientId,
             playerName: playerName,
             instanceId: SHORT_ID,
+            sessionId: removedSession.sessionId,
             message: `${playerName} a quitte la partie`,
             timestamp: Date.now()
-        });
+            });
+        }
     });
 
     ws.on('error', (err) => {
@@ -400,9 +429,9 @@ gameWss.on('connection', (ws, req) => {
 // Arret propre
 process.on('SIGINT', async () => {
     logger.info('shutdown', { reason: 'SIGINT' });
+    await sessionManager.shutdown();
     gameWss.close();
     dashboardWss.close();
     httpServer.close();
-    if (store.disconnect) await store.disconnect();
     process.exit(0);
 });

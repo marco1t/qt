@@ -18,7 +18,7 @@ Rectangle {
     id: root
 
     signal backToMenu
-    signal joinServer(string ip, int port)
+    signal joinServer(string ip, int port, string sessionCode)
 
     // Fond dégradé
     gradient: Gradient {
@@ -114,7 +114,7 @@ Rectangle {
         // Formulaire de connexion
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 220
+            Layout.preferredHeight: 300
             color: Qt.rgba(0, 0, 0, 0.3)
             radius: 12
             border.color: Theme.teamA
@@ -191,6 +191,36 @@ Rectangle {
                         onAccepted: connectButton.clicked()
                     }
                 }
+
+                // Code session
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Text {
+                        text: "Code session"
+                        color: Theme.textPrimary
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+
+                    TextField {
+                        id: sessionInput
+                        Layout.fillWidth: true
+                        placeholderText: "default"
+                        text: "default"
+                        font.pixelSize: 18
+                        color: Theme.textPrimary
+                        background: Rectangle {
+                            color: Theme.backgroundDark
+                            radius: 6
+                            border.color: sessionInput.activeFocus ? Theme.teamA : "#34495E"
+                            border.width: 2
+                        }
+
+                        onAccepted: connectButton.clicked()
+                    }
+                }
             }
         }
 
@@ -206,6 +236,7 @@ Rectangle {
             onClicked: {
                 var ip = ipInput.text.trim();
                 var port = parseInt(portInput.text) || 7777;
+                var sessionCode = sessionInput.text.trim() || "default";
 
                 if (ip.length === 0) {
                     console.warn("IP vide");
@@ -216,7 +247,7 @@ Rectangle {
                 addRecentServer(ip, port);
 
                 // Émettre le signal
-                root.joinServer(ip, port);
+                root.joinServer(ip, port, sessionCode);
             }
         }
 

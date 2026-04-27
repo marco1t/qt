@@ -9,6 +9,14 @@
  *   REDIS_URL=redis://localhost:6379 node websocket-server.js
  */
 
+const DEFAULT_SESSION_ID = 'default';
+
+function normalizeSessionId(sessionId) {
+    const raw = String(sessionId || DEFAULT_SESSION_ID).trim();
+    if (!raw) return DEFAULT_SESSION_ID;
+    return raw.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 64) || DEFAULT_SESSION_ID;
+}
+
 // =============================================================
 // Interface commune (documentation)
 // =============================================================
@@ -25,6 +33,7 @@
 // addPlayer(player) -> void
 // removePlayer(playerId) -> void
 // getPlayer(playerId) -> object|null
+// updatePlayer(playerId, patch) -> object|null
 // getClickStats() -> { total, validated, rejected }
 // incrementClickStat(field) -> void
 // resetClickStats() -> void
@@ -37,7 +46,8 @@
 // =============================================================
 
 class MemoryStore {
-    constructor() {
+    constructor(options = {}) {
+        this.sessionId = normalizeSessionId(options.sessionId);
         this.state = {
             phase: 'lobby',
             teamA: { gauge: 0, players: [] },
@@ -112,6 +122,31 @@ class MemoryStore {
         return this.getPlayers().length;
     }
 
+    updatePlayer(playerId, patch) {
+        const player = this.getPlayer(playerId);
+        if (!player) return null;
+        Object.assign(player, patch);
+        return player;
+    }
+
+    cleanupDisconnectedPlayers(graceMs, now = Date.now()) {
+        const expired = this.getPlayers().filter(player =>
+            player.isDisconnected &&
+            player.disconnectedAt &&
+            now - player.disconnectedAt > graceMs
+        );
+
+        expired.forEach(player => {
+            this.addDisconnectedPlayer({
+                ...player,
+                name: player.name && player.name.endsWith(' (deco)') ? player.name : `${player.name} (deco)`
+            });
+            this.removePlayer(player.id);
+        });
+
+        return expired.length;
+    }
+
     // --- Click Stats ---
     getClickStats() { return { ...this.clickStats }; }
     incrementClickStat(field) { this.clickStats[field]++; }
@@ -140,8 +175,7 @@ class MemoryStore {
 
     // --- Score joueur ---
     updatePlayerScore(playerId, score) {
-        const player = this.getPlayer(playerId);
-        if (player) player.score = score;
+        this.updatePlayer(playerId, { score });
     }
 
     // --- Verrou distribue (no-op en memoire, une seule instance) ---
@@ -184,11 +218,17 @@ class RedisStore extends MemoryStore {
      * @param {string} redisUrl - URL Redis (redis://host:port)
      * @param {string} instanceId - ID unique de cette instance
      */
-    constructor(redisUrl, instanceId) {
-        super(); // Herite du MemoryStore comme cache local
+    constructor(redisUrl, instanceId, options = {}) {
+        super(options); // Herite du MemoryStore comme cache local
 
         this.instanceId = instanceId;
         this.redisUrl = redisUrl;
+        this.sessionId = normalizeSessionId(options.sessionId);
+        this.snapshotKey = `clickwars:sessions:${this.sessionId}:state_snapshot`;
+        this.activeSessionsKey = 'clickwars:sessions:active';
+        this.sessionMetaKey = 'clickwars:sessions:meta';
+        this.snapshotDebounceMs = options.snapshotDebounceMs || 250;
+        this._snapshotDebounce = null;
         this.pub = null;  // Client Redis pour publier
         this.sub = null;  // Client Redis pour s'abonner
         this.redis = null; // Alias pour le client principal (utilise par websocket-server)
@@ -212,6 +252,9 @@ class RedisStore extends MemoryStore {
                 try {
                     const data = JSON.parse(message);
 
+                    const messageSessionId = normalizeSessionId(data.sessionId);
+                    if (messageSessionId !== this.sessionId) return;
+
                     // Ignorer nos propres messages
                     if (data.sourceInstanceId === this.instanceId) return;
 
@@ -228,7 +271,9 @@ class RedisStore extends MemoryStore {
             });
 
             this.ready = true;
-            console.log(`RedisStore: connecte a ${this.redisUrl} (instance: ${this.instanceId})`);
+            console.log(`RedisStore: connecte a ${this.redisUrl} (instance: ${this.instanceId}, session: ${this.sessionId})`);
+
+            await this._markSessionActive();
 
             // Charger l'etat existant depuis Redis (si une autre instance a deja commence)
             await this._loadInitialState();
@@ -241,10 +286,25 @@ class RedisStore extends MemoryStore {
         }
     }
 
+    async _markSessionActive() {
+        if (!this.ready) return;
+        try {
+            const meta = {
+                sessionId: this.sessionId,
+                updatedAt: Date.now(),
+                instanceId: this.instanceId
+            };
+            await this.pub.sadd(this.activeSessionsKey, this.sessionId);
+            await this.pub.hset(this.sessionMetaKey, this.sessionId, JSON.stringify(meta));
+        } catch (e) {
+            console.error('RedisStore: erreur mark session active', e.message);
+        }
+    }
+
     // Charger l'etat initial depuis Redis (pour les instances qui rejoignent tard)
     async _loadInitialState() {
         try {
-            const snapshot = await this.pub.get('clickwars:state_snapshot');
+            const snapshot = await this.pub.get(this.snapshotKey);
             if (snapshot) {
                 const data = JSON.parse(snapshot);
                 this.state.phase = data.phase || 'lobby';
@@ -257,11 +317,21 @@ class RedisStore extends MemoryStore {
                 }
                 this.clickStats = data.clickStats || { total: 0, validated: 0, rejected: 0 };
                 this.victoryTime = data.victoryTime || null;
-                console.log(`RedisStore: Etat initial charge (phase: ${this.state.phase}, joueurs: ${this.getPlayerCount()})`);
+                console.log(`RedisStore: Etat initial charge (session: ${this.sessionId}, phase: ${this.state.phase}, joueurs: ${this.getPlayerCount()})`);
             }
         } catch (e) {
             console.error('RedisStore: erreur chargement etat initial', e.message);
         }
+    }
+
+    _scheduleSnapshot() {
+        if (!this.ready) return;
+        if (this._snapshotDebounce) return;
+        this._snapshotDebounce = setTimeout(() => {
+            this._snapshotDebounce = null;
+            this._saveSnapshot();
+        }, this.snapshotDebounceMs);
+        if (this._snapshotDebounce.unref) this._snapshotDebounce.unref();
     }
 
     // Sauvegarder un snapshot de l'etat dans Redis (appele periodiquement)
@@ -269,6 +339,7 @@ class RedisStore extends MemoryStore {
         if (!this.ready) return;
         try {
             const snapshot = {
+                sessionId: this.sessionId,
                 phase: this.getPhase(),
                 gaugeA: this.getGauge('A'),
                 gaugeB: this.getGauge('B'),
@@ -279,7 +350,8 @@ class RedisStore extends MemoryStore {
                 victoryTime: this.getVictoryTime(),
                 timestamp: Date.now()
             };
-            await this.pub.set('clickwars:state_snapshot', JSON.stringify(snapshot));
+            await this.pub.set(this.snapshotKey, JSON.stringify(snapshot));
+            await this._markSessionActive();
         } catch (e) {
             console.error('RedisStore: erreur sauvegarde snapshot', e.message);
         }
@@ -291,6 +363,7 @@ class RedisStore extends MemoryStore {
         try {
             await this.pub.publish('clickwars:broadcasts', JSON.stringify({
                 ...message,
+                sessionId: this.sessionId,
                 sourceInstanceId: this.instanceId
             }));
         } catch (e) {
@@ -304,8 +377,10 @@ class RedisStore extends MemoryStore {
         try {
             await this.pub.publish('clickwars:state_sync', JSON.stringify({
                 ...update,
+                sessionId: this.sessionId,
                 sourceInstanceId: this.instanceId
             }));
+            this._scheduleSnapshot();
         } catch (e) {
             console.error('RedisStore: erreur sync state', e.message);
         }
@@ -350,6 +425,12 @@ class RedisStore extends MemoryStore {
                 break;
             case 'update_player_score':
                 super.updatePlayerScore(data.playerId, data.score);
+                break;
+            case 'update_player':
+                super.updatePlayer(data.playerId, data.patch);
+                break;
+            case 'cleanup_disconnected':
+                super.cleanupDisconnectedPlayers(data.graceMs, data.now);
                 break;
         }
     }
@@ -407,6 +488,22 @@ class RedisStore extends MemoryStore {
         this.syncState({ action: 'update_player_score', playerId, score });
     }
 
+    updatePlayer(playerId, patch) {
+        const player = super.updatePlayer(playerId, patch);
+        if (player) {
+            this.syncState({ action: 'update_player', playerId, patch });
+        }
+        return player;
+    }
+
+    cleanupDisconnectedPlayers(graceMs, now = Date.now()) {
+        const removed = super.cleanupDisconnectedPlayers(graceMs, now);
+        if (removed > 0) {
+            this.syncState({ action: 'cleanup_disconnected', graceMs, now });
+        }
+        return removed;
+    }
+
     resetGame() {
         super.resetGame();
         this.syncState({ action: 'reset_game' });
@@ -417,12 +514,12 @@ class RedisStore extends MemoryStore {
         this.syncState({ action: 'start_game' });
     }
 
-    // Verrou distribue via Redis SETNX
+    // Verrou distribue via Redis SETNX, isole par session
     async acquireLock(key, ttlMs = 5000) {
         if (!this.ready) return true;
         try {
             const result = await this.pub.set(
-                `clickwars:lock:${key}`,
+                `clickwars:sessions:${this.sessionId}:lock:${key}`,
                 this.instanceId,
                 'PX', ttlMs,
                 'NX'
@@ -437,9 +534,9 @@ class RedisStore extends MemoryStore {
     async releaseLock(key) {
         if (!this.ready) return;
         try {
-            const current = await this.pub.get(`clickwars:lock:${key}`);
+            const current = await this.pub.get(`clickwars:sessions:${this.sessionId}:lock:${key}`);
             if (current === this.instanceId) {
-                await this.pub.del(`clickwars:lock:${key}`);
+                await this.pub.del(`clickwars:sessions:${this.sessionId}:lock:${key}`);
             }
         } catch (e) {
             console.error('RedisStore: erreur releaseLock', e.message);
@@ -448,6 +545,8 @@ class RedisStore extends MemoryStore {
 
     async disconnect() {
         if (this._snapshotInterval) clearInterval(this._snapshotInterval);
+        if (this._snapshotDebounce) clearTimeout(this._snapshotDebounce);
+        await this._saveSnapshot();
         if (this.pub) await this.pub.quit();
         if (this.sub) await this.sub.quit();
     }
@@ -467,4 +566,4 @@ function createStore(instanceId) {
     return new MemoryStore();
 }
 
-module.exports = { MemoryStore, RedisStore, createStore };
+module.exports = { MemoryStore, RedisStore, createStore, DEFAULT_SESSION_ID, normalizeSessionId };

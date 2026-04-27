@@ -12,23 +12,27 @@
  */
 
 const crypto = require('crypto');
+const { DEFAULT_SESSION_ID, normalizeSessionId } = require('./SharedStateStore');
 
 class GameServer {
     /**
      * @param {object} store - Instance de MemoryStore ou RedisStore
      * @param {string} [instanceId] - ID unique de cette instance (pour le multi-instances)
      */
-    constructor(store, instanceId) {
+    constructor(store, instanceId, options = {}) {
         if (!store) {
             // Retrocompatibilite : si pas de store, creer un MemoryStore
             const { MemoryStore } = require('./SharedStateStore');
-            store = new MemoryStore();
+            store = new MemoryStore(options);
         }
 
         this.store = store;
         this.instanceId = instanceId || crypto.randomUUID();
-        this.shortId = this.shortId;
+        this.sessionId = normalizeSessionId(options.sessionId || store.sessionId || DEFAULT_SESSION_ID);
+        this.shortId = this.instanceId.slice(0, 8);
         this.TAG = `[instance:${this.shortId}]`;
+        this.broadcastSeq = 0;
+        this.RECONNECT_GRACE_MS = parseInt(process.env.RECONNECT_GRACE_MS || '30000', 10);
 
         // Clients connectes (toujours LOCAL a cette instance)
         this.clients = new Map();  // clientId -> { ws, playerIds: [], playerData: [] }
@@ -47,6 +51,11 @@ class GameServer {
 
         // Compteur pour IDs uniques de bots (prefixe par l'instanceId)
         this.botCounter = 0;
+
+        this.cleanupInterval = setInterval(() => {
+            this.cleanupExpiredDisconnectedPlayers();
+        }, Math.max(5000, this.RECONNECT_GRACE_MS));
+        if (this.cleanupInterval.unref) this.cleanupInterval.unref();
     }
 
     /**
@@ -68,18 +77,9 @@ class GameServer {
         const client = this.clients.get(clientId);
         if (client && client.playerIds.length > 0) {
             client.playerIds.forEach(playerId => {
-                const player = this.store.getPlayer(playerId);
-                if (player) {
-                    this.store.addDisconnectedPlayer({
-                        ...player,
-                        name: player.name + ' (deco)',
-                        disconnectedAt: Date.now()
-                    });
-                }
-                this.store.removePlayer(playerId);
-                console.log(`${this.TAG} Player ${playerId} removed (client disconnected)`);
+                this._markPlayerDisconnected(playerId, clientId);
             });
-            this.broadcastStateUpdate();
+            this._broadcastLobbyAndState();
         }
         this.clients.delete(clientId);
         console.log(`${this.TAG} Client ${clientId} disconnected`);
@@ -134,43 +134,145 @@ class GameServer {
         const { playerId, name } = message;
 
         console.log(`${this.TAG} Player join: ${name} (${clientId})`);
+        this.cleanupExpiredDisconnectedPlayers();
+
+        const existingPlayer = this.store.getPlayer(playerId);
+        if (existingPlayer) {
+            this._restorePlayerSession(clientId, existingPlayer, name);
+            return;
+        }
 
         // Auto-equilibrage
+        const { countA, countB, assignedTeam } = this._assignBalancedTeam();
+
+        console.log(`${this.TAG} Auto-balance: A=${countA} vs B=${countB} -> assigned ${assignedTeam}`);
+
+        const playerData = this._createPlayerData({
+            id: playerId,
+            name: name || `Joueur ${countA + countB + 1}`,
+            team: assignedTeam,
+            lastClientId: clientId
+        });
+
+        // Stocker dans le client local
+        this._attachPlayerToClient(clientId, playerData);
+
+        // Ajouter dans le store partage
+        this.store.addPlayer(playerData);
+
+        this._sendSessionJoined(clientId, playerData.id, false);
+        this.sendStateToClient(clientId);
+        this._broadcastLobbyAndState();
+    }
+
+    _attachPlayerToClient(clientId, playerData) {
+        const client = this.clients.get(clientId);
+        if (!client) return;
+        if (!client.playerIds.includes(playerData.id)) {
+            client.playerIds.push(playerData.id);
+        }
+        const existingIndex = client.playerData.findIndex(p => p.id === playerData.id);
+        if (existingIndex >= 0) {
+            client.playerData[existingIndex] = playerData;
+        } else {
+            client.playerData.push(playerData);
+        }
+    }
+
+    _assignBalancedTeam() {
         const countA = this.store.getPlayerCount('A');
         const countB = this.store.getPlayerCount('B');
-
         let assignedTeam = "A";
+
         if (countA > countB) {
             assignedTeam = "B";
         } else if (countB > countA) {
             assignedTeam = "A";
         }
 
-        console.log(`${this.TAG} Auto-balance: A=${countA} vs B=${countB} -> assigned ${assignedTeam}`);
+        return { countA, countB, assignedTeam };
+    }
 
-        const playerData = {
-            id: playerId,
-            name: name || `Joueur ${countA + countB + 1}`,
-            team: assignedTeam,
+    _createPlayerData({ id, name, team, lastClientId = null, isBot = false }) {
+        return {
+            id,
+            name,
+            team,
             score: 0,
-            isBot: false,
+            isBot,
             isHost: false,
+            isDisconnected: false,
+            disconnectedAt: null,
+            lastClientId,
             clickHistory: []
         };
+    }
 
-        // Stocker dans le client local
-        const client = this.clients.get(clientId);
-        if (client) {
-            if (!client.playerIds.includes(playerId)) {
-                client.playerIds.push(playerId);
-                client.playerData.push(playerData);
-            }
+    _restorePlayerSession(clientId, existingPlayer, name) {
+        const canReconnect = this._isWithinReconnectGrace(existingPlayer);
+        const restoredPlayer = this.store.updatePlayer(existingPlayer.id, {
+            name: name || existingPlayer.name,
+            isDisconnected: false,
+            disconnectedAt: null,
+            lastClientId: clientId
+        }) || existingPlayer;
+
+        this._attachPlayerToClient(clientId, restoredPlayer);
+
+        if (canReconnect) {
+            console.log(`${this.TAG} Player reconnected: ${restoredPlayer.name} (${existingPlayer.id})`);
+        } else {
+            console.log(`${this.TAG} Player refreshed existing session: ${restoredPlayer.name} (${existingPlayer.id})`);
         }
 
-        // Ajouter dans le store partage
-        this.store.addPlayer(playerData);
-
+        this._sendSessionJoined(clientId, restoredPlayer.id, true);
         this.sendStateToClient(clientId);
+        this._broadcastLobbyAndState();
+    }
+
+    _sendSessionJoined(clientId, playerId, restored) {
+        const client = this.clients.get(clientId);
+        if (!client || !client.ws || client.ws.readyState !== 1) return;
+
+        try {
+            client.ws.send(JSON.stringify({
+                type: 'session_joined',
+                sessionId: this.sessionId,
+                playerId,
+                instanceId: this.shortId,
+                restored: !!restored,
+                timestamp: Date.now()
+            }));
+        } catch (error) {
+            console.error(`${this.TAG} Session join ack error to ${clientId}:`, error.message);
+        }
+    }
+
+    _isWithinReconnectGrace(player) {
+        return !!(
+            player.isDisconnected &&
+            player.disconnectedAt &&
+            Date.now() - player.disconnectedAt <= this.RECONNECT_GRACE_MS
+        );
+    }
+
+    _markPlayerDisconnected(playerId, clientId) {
+        const player = this.store.getPlayer(playerId);
+        if (!player) return;
+        if (player.lastClientId && player.lastClientId !== clientId) {
+            console.log(`${this.TAG} Stale disconnect ignored for player ${playerId}`);
+            return;
+        }
+
+        this.store.updatePlayer(playerId, {
+            isDisconnected: true,
+            disconnectedAt: Date.now(),
+            lastClientId: clientId
+        });
+        console.log(`${this.TAG} Player ${playerId} marked disconnected (client disconnected)`);
+    }
+
+    _broadcastLobbyAndState() {
         this.broadcastLobbyUpdate();
         this.broadcastStateUpdate();
     }
@@ -197,6 +299,10 @@ class GameServer {
         const player = this.store.getPlayer(playerId);
         if (!player) {
             console.warn(`${this.TAG} Player ${playerId} not found`);
+            return;
+        }
+        if (player.isDisconnected) {
+            console.warn(`${this.TAG} Player ${playerId} is disconnected`);
             return;
         }
 
@@ -240,10 +346,13 @@ class GameServer {
         this.store.incrementGauge(player.team);
         this.store.incrementClickStat('validated');
         player.score++;
-        this.store.updatePlayerScore(player.id, player.score);
         if (player.clickHistory.length < 50) {
             player.clickHistory.push(Date.now());
         }
+        this.store.updatePlayer(player.id, {
+            score: player.score,
+            clickHistory: player.clickHistory
+        });
 
         const winner = this.checkVictory();
         if (winner) {
@@ -338,18 +447,64 @@ class GameServer {
         return null;
     }
 
+    cleanupExpiredDisconnectedPlayers(now = Date.now()) {
+        if (!this.store.cleanupDisconnectedPlayers) return 0;
+        return this.store.cleanupDisconnectedPlayers(this.RECONNECT_GRACE_MS, now);
+    }
+
+    _buildStateHash() {
+        const players = this.store.getPlayers()
+            .map(p => ({
+                id: p.id,
+                team: p.team,
+                score: p.score || 0,
+                isBot: !!p.isBot,
+                isDisconnected: !!p.isDisconnected
+            }))
+            .sort((a, b) => a.id.localeCompare(b.id));
+
+        const payload = {
+            phase: this.store.getPhase(),
+            teamAGauge: this.store.getGauge('A'),
+            teamBGauge: this.store.getGauge('B'),
+            maxGauge: this.store.getMaxGauge(),
+            winner: this.store.getWinner(),
+            sessionId: this.sessionId,
+            players
+        };
+
+        return crypto
+            .createHash('sha1')
+            .update(JSON.stringify(payload))
+            .digest('hex')
+            .slice(0, 12);
+    }
+
+    _decorateMessage(message) {
+        const broadcastSeq = ++this.broadcastSeq;
+        return {
+            ...message,
+            messageId: `${this.shortId}:${broadcastSeq}`,
+            broadcastSeq,
+            stateHash: message.stateHash || this._buildStateHash()
+        };
+    }
+
     /**
      * Construit le message d'etat (shared between send and broadcast)
      */
     _buildStateMessage() {
         return {
             type: "state_update",
+            sessionId: this.sessionId,
             teamAGauge: this.store.getGauge('A'),
             teamBGauge: this.store.getGauge('B'),
             maxGauge: this.store.getMaxGauge(),
             players: this.store.getPlayers(),
             phase: this.store.getPhase(),
+            winner: this.store.getWinner(),
             instanceId: this.shortId,
+            stateHash: this._buildStateHash(),
             timestamp: Date.now()
         };
     }
@@ -398,11 +553,13 @@ class GameServer {
 
         const message = {
             type: "victory",
+            sessionId: this.sessionId,
             winner: winner,
             finalScores: this.store.getPlayers(),
             clickStats: clickStats,
             latencyWindowMs: this.LATENCY_WINDOW_MS,
             instanceId: this.shortId,
+            stateHash: this._buildStateHash(),
             timestamp: Date.now()
         };
 
@@ -420,10 +577,12 @@ class GameServer {
     broadcastLobbyUpdate() {
         const message = {
             type: "lobby_update",
+            sessionId: this.sessionId,
             players: this.store.getPlayers(),
             phase: this.store.getPhase(),
             maxGauge: this.store.getMaxGauge(),
             instanceId: this.shortId,
+            stateHash: this._buildStateHash(),
             timestamp: Date.now()
         };
 
@@ -441,16 +600,12 @@ class GameServer {
         const botId = `bot_${this.instanceId.slice(0,8)}_${++this.botCounter}_${Date.now()}`;
         const botName = name || "Bot " + (this.store.getPlayerCount() + 1);
         const botTeam = team || (this.store.getPlayerCount('A') <= this.store.getPlayerCount('B') ? "A" : "B");
-
-        const botData = {
+        const botData = this._createPlayerData({
             id: botId,
             name: botName,
             team: botTeam,
-            score: 0,
-            isBot: true,
-            isHost: false,
-            clickHistory: []
-        };
+            isBot: true
+        });
 
         this.store.addPlayer(botData);
         console.log(`${this.TAG} Bot added: ${botName} (Team ${botTeam})`);
@@ -528,7 +683,8 @@ class GameServer {
      * Si le store est un RedisStore, il publie aussi sur pub/sub
      */
     broadcast(message) {
-        const json = JSON.stringify(message);
+        const outgoing = message.messageId ? message : this._decorateMessage(message);
+        const json = JSON.stringify(outgoing);
         let sentCount = 0;
 
         this.clients.forEach((client, clientId) => {
@@ -544,7 +700,7 @@ class GameServer {
 
         // Si on est en mode multi-instances, publier pour les autres instances
         if (this.store.publishBroadcast) {
-            this.store.publishBroadcast(message);
+            this.store.publishBroadcast(outgoing);
         }
     }
 
@@ -569,6 +725,8 @@ class GameServer {
      * Retourne les statistiques du serveur (pour le dashboard)
      */
     getStats() {
+        this.cleanupExpiredDisconnectedPlayers();
+
         // Latency stats
         const reports = Array.from(this.store.getLatencyReports().values());
         const latencyRaw = GameServer._percentileStats(reports.map(r => r.avgRtt));
@@ -598,8 +756,16 @@ class GameServer {
             victoryBroadcastMs: this.store.getVictoryBroadcastMs(),
             latencyStats,
             victoryNotifStats,
-            instanceId: this.shortId
+            stateHash: this._buildStateHash(),
+            instanceId: this.shortId,
+            sessionId: this.sessionId
         };
+    }
+
+    shutdown() {
+        this.stopBotLoop();
+        if (this.pendingBroadcast) clearTimeout(this.pendingBroadcast);
+        if (this.cleanupInterval) clearInterval(this.cleanupInterval);
     }
 }
 
