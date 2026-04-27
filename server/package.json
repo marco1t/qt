@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node websocket-server.js",
     "dev": "node websocket-server.js 7777",
-    "test": "node tests.js"
+    "test": "node tests.js",
+    "stress:extreme": "node extreme-stress-test.js"
   },
   "dependencies": {
     "ioredis": "^5.10.1",

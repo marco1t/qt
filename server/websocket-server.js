@@ -400,6 +400,7 @@ gameWss.on('connection', (ws, req) => {
 // Arret propre
 process.on('SIGINT', async () => {
     logger.info('shutdown', { reason: 'SIGINT' });
+    gameServer.shutdown();
     gameWss.close();
     dashboardWss.close();
     httpServer.close();

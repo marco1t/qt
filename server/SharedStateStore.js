@@ -25,6 +25,7 @@
 // addPlayer(player) -> void
 // removePlayer(playerId) -> void
 // getPlayer(playerId) -> object|null
+// updatePlayer(playerId, patch) -> object|null
 // getClickStats() -> { total, validated, rejected }
 // incrementClickStat(field) -> void
 // resetClickStats() -> void
@@ -112,6 +113,31 @@ class MemoryStore {
         return this.getPlayers().length;
     }
 
+    updatePlayer(playerId, patch) {
+        const player = this.getPlayer(playerId);
+        if (!player) return null;
+        Object.assign(player, patch);
+        return player;
+    }
+
+    cleanupDisconnectedPlayers(graceMs, now = Date.now()) {
+        const expired = this.getPlayers().filter(player =>
+            player.isDisconnected &&
+            player.disconnectedAt &&
+            now - player.disconnectedAt > graceMs
+        );
+
+        expired.forEach(player => {
+            this.addDisconnectedPlayer({
+                ...player,
+                name: player.name && player.name.endsWith(' (deco)') ? player.name : `${player.name} (deco)`
+            });
+            this.removePlayer(player.id);
+        });
+
+        return expired.length;
+    }
+
     // --- Click Stats ---
     getClickStats() { return { ...this.clickStats }; }
     incrementClickStat(field) { this.clickStats[field]++; }
@@ -140,8 +166,7 @@ class MemoryStore {
 
     // --- Score joueur ---
     updatePlayerScore(playerId, score) {
-        const player = this.getPlayer(playerId);
-        if (player) player.score = score;
+        this.updatePlayer(playerId, { score });
     }
 
     // --- Verrou distribue (no-op en memoire, une seule instance) ---
@@ -351,6 +376,12 @@ class RedisStore extends MemoryStore {
             case 'update_player_score':
                 super.updatePlayerScore(data.playerId, data.score);
                 break;
+            case 'update_player':
+                super.updatePlayer(data.playerId, data.patch);
+                break;
+            case 'cleanup_disconnected':
+                super.cleanupDisconnectedPlayers(data.graceMs, data.now);
+                break;
         }
     }
 
@@ -405,6 +436,22 @@ class RedisStore extends MemoryStore {
     updatePlayerScore(playerId, score) {
         super.updatePlayerScore(playerId, score);
         this.syncState({ action: 'update_player_score', playerId, score });
+    }
+
+    updatePlayer(playerId, patch) {
+        const player = super.updatePlayer(playerId, patch);
+        if (player) {
+            this.syncState({ action: 'update_player', playerId, patch });
+        }
+        return player;
+    }
+
+    cleanupDisconnectedPlayers(graceMs, now = Date.now()) {
+        const removed = super.cleanupDisconnectedPlayers(graceMs, now);
+        if (removed > 0) {
+            this.syncState({ action: 'cleanup_disconnected', graceMs, now });
+        }
+        return removed;
     }
 
     resetGame() {

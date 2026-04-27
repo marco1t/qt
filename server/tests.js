@@ -137,10 +137,35 @@ test('Un joueur inconnu retourne null', () => {
     assert.strictEqual(gs.getPlayer('inconnu'), null);
 });
 
-test('Un joueur déconnecté est retiré', () => {
+test('Un joueur déconnecté est conservé pendant la fenêtre de reconnexion', () => {
     const gs = createServerWithPlayer('Alice', 'p1', 'c1');
     assert.strictEqual(gs.getAllPlayers().length, 1);
     gs.removeClient('c1');
+    assert.strictEqual(gs.getAllPlayers().length, 1);
+    assert.strictEqual(gs.getPlayer('p1').isDisconnected, true);
+});
+
+test('Un joueur reconnecté garde son équipe et son score', () => {
+    const gs = createServerWithPlayer('Alice', 'p1', 'c1');
+    gs.store.setMaxGauge(100);
+    gs.handleMessage('c1', { type: 'start_game' });
+    gs.handleMessage('c1', { type: 'click', playerId: 'p1' });
+
+    gs.removeClient('c1');
+    gs.addClient('c2', createMockWs());
+    gs.handleMessage('c2', { type: 'player_join', playerId: 'p1', name: 'Alice' });
+
+    const player = gs.getPlayer('p1');
+    assert.strictEqual(player.team, 'A');
+    assert.strictEqual(player.score, 1);
+    assert.strictEqual(player.isDisconnected, false);
+});
+
+test('Un joueur déconnecté expire après la fenêtre de reconnexion', () => {
+    const gs = createServerWithPlayer('Alice', 'p1', 'c1');
+    gs.RECONNECT_GRACE_MS = 10;
+    gs.removeClient('c1');
+    gs.cleanupExpiredDisconnectedPlayers(Date.now() + 100);
     assert.strictEqual(gs.getAllPlayers().length, 0);
 });
 
@@ -343,8 +368,7 @@ test('clickStats comptabilise correctement', () => {
 console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
 allServers.forEach(gs => {
-    gs.stopBotLoop();
-    if (gs.pendingBroadcast) clearTimeout(gs.pendingBroadcast);
+    gs.shutdown();
 });
 
 if (failed === 0) {

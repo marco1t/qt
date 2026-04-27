@@ -36,6 +36,10 @@ async function runTests() {
         
         // Vider la base de données Redis pour un test propre
         await store1.redis.flushall();
+        store1.state.teamA.players = [];
+        store1.state.teamB.players = [];
+        store1.clearDisconnectedPlayers();
+        store1.resetGame();
         console.log('✅ Base Redis nettoye');
         
         gs1 = new GameServer(store1, 'instance-1');
@@ -112,6 +116,25 @@ async function runTests() {
         console.log('  ✅ L\'instance 1 et 2 partagent bien les memes jauges accumulees');
 
         // -------------------------------------------------------------
+        // TEST 3B : Reconnexion cross-instance avec conservation session
+        // -------------------------------------------------------------
+        console.log('\nTest 3B : Reconnexion cross-instance');
+        gs1.removeClient('client_i1_a');
+        await new Promise(r => setTimeout(r, 100));
+
+        assert.strictEqual(store2.getPlayer('player_a').isDisconnected, true, "Instance 2 doit voir Alice deconnectee");
+
+        gs2.addClient('client_i2_a_reco', createMockWs());
+        gs2.handleMessage('client_i2_a_reco', { type: 'player_join', playerId: 'player_a', name: 'Alice' });
+        await new Promise(r => setTimeout(r, 100));
+
+        const aliceAfterReconnect = store1.getPlayer('player_a');
+        assert.strictEqual(aliceAfterReconnect.team, 'A', "Alice garde son equipe");
+        assert.strictEqual(aliceAfterReconnect.score, 1, "Alice garde son score");
+        assert.strictEqual(aliceAfterReconnect.isDisconnected, false, "Alice est reconnectee globalement");
+        console.log('  ✅ Un joueur reconnecte sur une autre instance garde son etat');
+
+        // -------------------------------------------------------------
         // TEST 4 : Communication Pub/Sub (Relais de broadcast)
         // -------------------------------------------------------------
         console.log('\nTest 4 : Communication Pub/Sub');
@@ -165,8 +188,8 @@ async function runTests() {
         }
     } finally {
         console.log('Nettoyage et deconnexion...');
-        if (gs1) { gs1.stopBotLoop(); if (gs1.pendingBroadcast) clearTimeout(gs1.pendingBroadcast); }
-        if (gs2) { gs2.stopBotLoop(); if (gs2.pendingBroadcast) clearTimeout(gs2.pendingBroadcast); }
+        if (gs1) gs1.shutdown();
+        if (gs2) gs2.shutdown();
         if (store1) await store1.disconnect();
         if (store2) await store2.disconnect();
     }
