@@ -11,6 +11,46 @@ cd server
 npm install
 ```
 
+## 1 Bis. Validation Reproductible En Une Commande
+
+Pour rejouer tout le pack de preuves automatiquement :
+
+```bash
+cd server
+npm run validate:devops
+```
+
+Le script :
+
+- vérifie la syntaxe des fichiers critiques ;
+- lance les tests unitaires, multi-instance local, Redis, routing et anti-abus ;
+- démarre deux instances WebSocket locales ;
+- lance un stress clean puis un stress abus/latence/cas limites ;
+- capture les métriques Prometheus des deux instances ;
+- écrit les rapports dans `/tmp/clickwars-devops-*`.
+
+Fichiers importants dans le dossier généré :
+
+```text
+summary.json
+stress-clean.json
+stress-abuse-latency-edge.json
+session-routing.json
+abuse-latency-edge.json
+metrics-inst-a.prom
+metrics-inst-b.prom
+inst-a.log
+inst-b.log
+```
+
+Si les ports par défaut sont occupés, utiliser :
+
+```bash
+GAME_PORT_A=17777 GAME_PORT_B=17778 \
+DASHBOARD_PORT_A=13000 DASHBOARD_PORT_B=13001 \
+npm run validate:devops
+```
+
 Démarrer Redis :
 
 ```bash

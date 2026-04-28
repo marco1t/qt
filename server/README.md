@@ -158,6 +158,14 @@ clickwars:sessions:<sessionId>:state_snapshot
 
 ## Tests
 
+Validation DevOps complète :
+
+```bash
+npm run validate:devops
+```
+
+Ce script exécute les régressions, démarre deux instances Node avec Redis, lance un stress clean, lance un stress abus/latence/cas limites, capture `/metrics`, puis écrit un `summary.json` dans `/tmp/clickwars-devops-*`.
+
 Régressions obligatoires :
 
 ```bash

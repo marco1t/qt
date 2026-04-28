@@ -9,6 +9,7 @@
     "test": "node tests.js",
     "test:sessions": "node tests-session-routing.js",
     "test:abuse": "node tests-abuse-latency-edge.js",
+    "validate:devops": "bash scripts/devops-validate.sh",
     "stress:extreme": "node extreme-stress-test.js"
   },
   "dependencies": {

@@ -78,6 +78,16 @@ Positionnement produit actuel : [docs/PROJECT_POSITIONING.md](docs/PROJECT_POSIT
 
 Depuis `server/` :
 
+Validation DevOps complète, avec rapports JSON, logs et métriques Prometheus :
+
+```bash
+npm run validate:devops
+```
+
+Le script écrit un dossier de preuves sous `/tmp/clickwars-devops-*`.
+
+Validations manuelles équivalentes :
+
 ```bash
 npm test
 node tests-abuse-latency-edge.js
