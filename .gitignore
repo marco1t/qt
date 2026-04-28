@@ -32,6 +32,9 @@ Makefile
 *.log
 *.debug
 
+# Local Redis persistence
+*.rdb
+
 # Temporary files
 tmp/
 temp/
