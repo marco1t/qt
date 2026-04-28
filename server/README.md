@@ -53,6 +53,11 @@ Métriques importantes :
 - `clickwars_server_degraded`
 - `clickwars_messages_per_second`
 - `clickwars_clicks_total`
+- `clickwars_rate_limited_total{reason="..."}`
+- `clickwars_duplicate_actions_total`
+- `clickwars_abuse_disconnects_total`
+- `clickwars_invalid_json_total`
+- `clickwars_oversized_payloads_total`
 
 ## Stress Test Principal
 
@@ -84,8 +89,56 @@ Variables utiles :
 - `RECONNECT_STORMS`
 - `SESSION_ID`
 - `REPORT_JSON`
+- `LATENCY_MS`
+- `JITTER_MS`
+- `PACKET_DELAY_PCT`
+- `PACKET_DROP_PCT`
+- `MALICIOUS_PCT`
+- `SPAM_HZ`
+- `DUPLICATE_ACTION_PCT`
+- `RAPID_JOIN_LEAVE_CYCLES`
 
 Le rapport JSON contient les preuves principales : connexions réussies, échecs, pic connecté, clics envoyés, messages reçus, reconnexions, duplications, gaps de séquence et divergences durables.
+
+Exemple avec latence, abus et cas limites :
+
+```bash
+SERVER_URLS=ws://localhost:7777,ws://localhost:7778 \
+METRICS_URLS=http://localhost:3000/metrics,http://localhost:3001/metrics \
+PROFILE=smoke \
+LATENCY_MS=80 \
+JITTER_MS=40 \
+PACKET_DELAY_PCT=25 \
+MALICIOUS_PCT=10 \
+SPAM_HZ=120 \
+DUPLICATE_ACTION_PCT=10 \
+RAPID_JOIN_LEAVE_CYCLES=3 \
+REPORT_JSON=/tmp/clickwars-789-report.json \
+node extreme-stress-test.js
+```
+
+Le rapport expose aussi `abusePrevention`, `latencySimulation` et `edgeCases`.
+
+## Anti-Abus Serveur
+
+Le serveur applique un rate limiting par connexion WebSocket. Variables principales :
+
+- `RATE_LIMIT_ENABLED=false` pour le désactiver temporairement.
+- `RATE_WINDOW_MS=1000`
+- `RATE_MAX_MESSAGES=120`
+- `RATE_MAX_CLICKS=80`
+- `RATE_MAX_JOINS=5`
+- `RATE_MAX_INVALID_JSON=10`
+- `RATE_MAX_PAYLOAD_BYTES=4096`
+- `RATE_CLOSE_ON_ABUSE=true` pour fermer les connexions abusives avec le code WebSocket `1008`.
+
+Un rejet envoie :
+
+```json
+{"type":"rate_limited","code":"CLICK_RATE_LIMIT","retryAfterMs":500}
+```
+
+Codes possibles : `MESSAGE_RATE_LIMIT`, `CLICK_RATE_LIMIT`, `JOIN_RATE_LIMIT`, `PAYLOAD_TOO_LARGE`, `INVALID_JSON_RATE`, `DUPLICATE_ACTION`.
 
 ## Sessions Et Routage
 
@@ -109,6 +162,7 @@ Régressions obligatoires :
 
 ```bash
 npm test
+node tests-abuse-latency-edge.js
 node tests-multi-instance-local.js
 REDIS_URL=redis://127.0.0.1:6379 node tests-multi-instance.js
 REDIS_URL=redis://127.0.0.1:6379 REPORT_JSON=/tmp/clickwars-session-routing-report.json node tests-session-routing.js
@@ -122,6 +176,14 @@ REDIS_URL=redis://127.0.0.1:6379 REPORT_JSON=/tmp/clickwars-session-routing-repo
 - restauration d'une session après perte d'instance ;
 - cohérence d'une session jointe depuis deux instances ;
 - absence de double store local lors de joins concurrents.
+
+`tests-abuse-latency-edge.js` prouve :
+
+- rejet des payloads trop gros, JSON invalides et fréquences anormales ;
+- rejet des `actionId` dupliqués avant mutation d'état ;
+- isolation d'un client abusif par rapport aux autres ;
+- reconnect storm avec conservation des équipes/scores ;
+- leave/rejoin autour d'une victoire sans casser la session.
 
 ## Critères De Réussite
 

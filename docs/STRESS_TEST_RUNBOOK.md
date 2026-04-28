@@ -162,7 +162,62 @@ Critères attendus hors overload volontaire :
 
 Sous overload volontaire, les échecs sont acceptables seulement s'ils sont mesurés explicitement dans le rapport et dans `/metrics`.
 
-## 9. Métriques À Capturer
+## 9. Prouver Rate Limiting, Latence Et Cas Limites
+
+Test déterministe local :
+
+```bash
+cd server
+REPORT_JSON=/tmp/clickwars-abuse-latency-edge-report.json \
+node tests-abuse-latency-edge.js
+```
+
+Ce rapport prouve :
+
+- spam messages/clics/joins rejeté par connexion ;
+- JSON invalide et payload trop gros mesurés ;
+- `actionId` dupliqué rejeté avant modification du score ;
+- reconnect storm sans perte d'équipe ni score ;
+- leave/rejoin autour d'une victoire sans incohérence de session.
+
+Campagne smoke avec réseau dégradé et trafic abusif :
+
+```bash
+SERVER_URLS=ws://localhost:7777,ws://localhost:7778 \
+METRICS_URLS=http://localhost:3000/metrics,http://localhost:3001/metrics \
+PROFILE=smoke \
+LATENCY_MS=80 \
+JITTER_MS=40 \
+PACKET_DELAY_PCT=25 \
+PACKET_DROP_PCT=0 \
+MALICIOUS_PCT=10 \
+SPAM_HZ=120 \
+DUPLICATE_ACTION_PCT=10 \
+RAPID_JOIN_LEAVE_CYCLES=3 \
+REPORT_JSON=/tmp/clickwars-789-smoke.json \
+node extreme-stress-test.js
+```
+
+Dans le JSON, lire :
+
+- `abusePrevention.rateLimitedMessages`
+- `abusePrevention.maliciousMessagesSent`
+- `abusePrevention.duplicateActionsSent`
+- `latencySimulation.delayedMessages`
+- `latencySimulation.averageInjectedDelayMs`
+- `edgeCases.rapidJoinLeaveCycles`
+- `edgeCases.reconnects`
+
+Critères attendus :
+
+- les messages abusifs produisent des `rate_limited` au lieu de crasher le serveur ;
+- les clients non abusifs continuent à recevoir des `state_update` ;
+- les paquets retardés sont comptabilisés ;
+- `consistency.final.diverged = false` après la fenêtre de descente ;
+- toute `Durable divergence` pendant le pic avec latence/jitter est un symptôme à analyser, pas un crash silencieux ;
+- les cycles join/leave et reconnects restent mesurés.
+
+## 10. Métriques À Capturer
 
 ```bash
 curl -fsS http://localhost:3000/metrics > /tmp/metrics-inst-a.prom
@@ -181,9 +236,14 @@ clickwars_session_errors_total
 clickwars_reconnect_attempts_total
 clickwars_server_overloaded
 clickwars_server_degraded
+clickwars_rate_limited_total
+clickwars_duplicate_actions_total
+clickwars_abuse_disconnects_total
+clickwars_invalid_json_total
+clickwars_oversized_payloads_total
 ```
 
-## 10. Arrêter Proprement
+## 11. Arrêter Proprement
 
 Arrêter chaque instance avec `Ctrl+C`.
 

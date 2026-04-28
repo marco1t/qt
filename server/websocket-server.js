@@ -22,6 +22,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const SessionManager = require('./SessionManager');
+const RateLimiter = require('./RateLimiter');
 const createLogger = require('./Logger');
 
 const GAME_PORT = parseInt(process.env.GAME_PORT || '7777', 10);
@@ -31,6 +32,15 @@ const MAX_CLIENTS = parseInt(process.env.MAX_CLIENTS || '2000', 10);
 const DEGRADED_CLIENTS = parseInt(process.env.DEGRADED_CLIENTS || Math.floor(MAX_CLIENTS * 0.8), 10);
 const OVERLOAD_MPS = parseInt(process.env.OVERLOAD_MPS || '5000', 10);
 const DEGRADED_MPS = parseInt(process.env.DEGRADED_MPS || Math.floor(OVERLOAD_MPS * 0.8), 10);
+const RATE_LIMIT_ENABLED = process.env.RATE_LIMIT_ENABLED !== 'false';
+const RATE_WINDOW_MS = parseInt(process.env.RATE_WINDOW_MS || '1000', 10);
+const RATE_MAX_MESSAGES = parseInt(process.env.RATE_MAX_MESSAGES || '120', 10);
+const RATE_MAX_CLICKS = parseInt(process.env.RATE_MAX_CLICKS || '80', 10);
+const RATE_MAX_JOINS = parseInt(process.env.RATE_MAX_JOINS || '5', 10);
+const RATE_MAX_INVALID_JSON = parseInt(process.env.RATE_MAX_INVALID_JSON || '10', 10);
+const RATE_MAX_PAYLOAD_BYTES = parseInt(process.env.RATE_MAX_PAYLOAD_BYTES || '4096', 10);
+const RATE_ACTION_ID_TTL_MS = parseInt(process.env.RATE_ACTION_ID_TTL_MS || '30000', 10);
+const RATE_CLOSE_ON_ABUSE = process.env.RATE_CLOSE_ON_ABUSE === 'true';
 
 const SHORT_ID = INSTANCE_ID.slice(0, 8);
 const TAG = `[instance:${SHORT_ID}]`;
@@ -62,6 +72,7 @@ function generateMetrics() {
     const stats = sessionManager ? sessionManager.getStats() : {};
     const cs = stats.clickStats || {};
     const loadStatus = getLoadStatus();
+    const rateMetrics = rateLimiter.getMetrics();
     const uptime = Math.floor((Date.now() - startTime) / 1000);
     const avgLatency = messageLatencyCount > 0 ? (messageLatencySum / messageLatencyCount).toFixed(3) : 0;
 
@@ -90,8 +101,18 @@ function generateMetrics() {
         metric('clickwars_reconnect_attempts_total', 'counter', 'Player session reconnect attempts', (stats.sessionMetrics && stats.sessionMetrics.reconnectAttempts) || 0),
         metric('clickwars_server_overloaded',       'gauge',   'Server overload status',         loadStatus.state === 'overloaded' ? 1 : 0),
         metric('clickwars_server_degraded',         'gauge',   'Server degraded status',         loadStatus.state === 'degraded' ? 1 : 0),
+        metric('clickwars_rate_limiter_enabled',    'gauge',   'Rate limiter enabled flag',       rateMetrics.enabled ? 1 : 0),
+        metric('clickwars_rate_limiter_tracked_clients', 'gauge', 'Clients tracked by rate limiter', rateMetrics.trackedClients || 0),
+        metric('clickwars_abuse_disconnects_total', 'counter', 'Connections closed by abuse prevention', rateMetrics.abuseDisconnects || 0),
+        metric('clickwars_duplicate_actions_total', 'counter', 'Duplicate action IDs rejected',   rateMetrics.duplicateActions || 0),
+        metric('clickwars_invalid_json_total',      'counter', 'Malformed JSON messages received', rateMetrics.invalidJson || 0),
+        metric('clickwars_oversized_payloads_total', 'counter', 'Payloads rejected for size',      rateMetrics.oversizedPayloads || 0),
         metric('clickwars_gauge_a',                 'gauge',   'Gauge value for Team A',         stats.teamAGauge || 0),
         metric('clickwars_gauge_b',                 'gauge',   'Gauge value for Team B',         stats.teamBGauge || 0),
+        '# HELP clickwars_rate_limited_total Messages rejected by abuse prevention reason',
+        '# TYPE clickwars_rate_limited_total counter',
+        ...Object.entries(rateMetrics.limitedByReason || {}).map(([reason, value]) =>
+            `clickwars_rate_limited_total{instance="${SHORT_ID}",reason="${reason}"} ${value}`),
         '# HELP clickwars_connection_events_total Connection lifecycle events by type',
         '# TYPE clickwars_connection_events_total counter',
         ...Object.entries(connectionEventCounts).map(([t, v]) =>
@@ -152,6 +173,21 @@ const dashboardWss = new WebSocket.Server({ server: httpServer, path: '/dashboar
 let messagesPerSecond = 0;
 const startTime = Date.now();
 
+const rateLimiter = new RateLimiter({
+    enabled: RATE_LIMIT_ENABLED,
+    windowMs: RATE_WINDOW_MS,
+    maxMessages: RATE_MAX_MESSAGES,
+    maxClicks: RATE_MAX_CLICKS,
+    maxJoins: RATE_MAX_JOINS,
+    maxInvalidJson: RATE_MAX_INVALID_JSON,
+    maxPayloadBytes: RATE_MAX_PAYLOAD_BYTES,
+    actionIdTtlMs: RATE_ACTION_ID_TTL_MS,
+    closeOnAbuse: RATE_CLOSE_ON_ABUSE
+});
+logger.info('rate_limiter_configured', rateLimiter.getConfig());
+const rateLimiterCleanupInterval = setInterval(() => rateLimiter.cleanup(), Math.max(RATE_WINDOW_MS, 5000));
+if (rateLimiterCleanupInterval.unref) rateLimiterCleanupInterval.unref();
+
 // --- 4. Initialiser le SessionManager ---
 const sessionManager = new SessionManager({
     instanceId: INSTANCE_ID,
@@ -209,6 +245,40 @@ const CLOSE_REASONS = {
 const closeReason = (code) => CLOSE_REASONS[code] || `Unknown (${code})`;
 
 logger.info('game_server_ready', { port: GAME_PORT });
+
+function handleRateLimit(clientId, ws, decision) {
+    logger.warn('rate_limited', {
+        clientId,
+        code: decision.code,
+        retryAfterMs: decision.retryAfterMs,
+        close: decision.close
+    });
+
+    try {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'rate_limited',
+                code: decision.code,
+                message: decision.message,
+                retryAfterMs: decision.retryAfterMs,
+                timestamp: Date.now()
+            }));
+            if (decision.close) {
+                rateLimiter.recordAbuseDisconnect();
+                ws.close(1008, decision.code);
+            }
+        }
+    } catch (error) {
+        logger.warn('rate_limit_send_failed', { clientId, error: error.message });
+    }
+}
+
+function rawByteLength(data) {
+    if (Buffer.isBuffer(data)) return data.length;
+    if (typeof data === 'string') return Buffer.byteLength(data);
+    if (data && typeof data.byteLength === 'number') return data.byteLength;
+    return Buffer.byteLength(String(data || ''));
+}
 
 // --- Logique Dashboard ---
 setInterval(async () => {
@@ -349,9 +419,31 @@ gameWss.on('connection', (ws, req) => {
         messagesPerSecond++;
         totalMessagesReceived++;
 
-        try {
-            const message = JSON.parse(data.toString());
+        const rawDecision = rateLimiter.checkRaw(clientId, rawByteLength(data));
+        if (!rawDecision.allowed) {
+            handleRateLimit(clientId, ws, rawDecision);
+            return;
+        }
 
+        let message;
+        try {
+            message = JSON.parse(data.toString());
+        } catch (error) {
+            const invalidDecision = rateLimiter.checkInvalidJson(clientId);
+            if (!invalidDecision.allowed) {
+                handleRateLimit(clientId, ws, invalidDecision);
+            }
+            logger.error('json_parse_error', { clientId, error: error.message });
+            return;
+        }
+
+        const rateDecision = rateLimiter.checkMessage(clientId, message);
+        if (!rateDecision.allowed) {
+            handleRateLimit(clientId, ws, rateDecision);
+            return;
+        }
+
+        try {
             // Track player name for lifecycle logs
             if (message.type === 'player_join' && message.name) {
                 const info = knownClients.get(clientId);
@@ -371,7 +463,7 @@ gameWss.on('connection', (ws, req) => {
             messageLatencyCount++;
 
         } catch (error) {
-            logger.error('json_parse_error', { clientId, error: error.message });
+            logger.error('message_handling_error', { clientId, type: message.type || 'unknown', error: error.message });
         }
     });
 
@@ -389,6 +481,7 @@ gameWss.on('connection', (ws, req) => {
         });
 
         const removedSession = sessionManager.removeClient(clientId);
+        rateLimiter.cleanupClient(clientId);
         knownClients.delete(clientId);
 
         addConnectionEvent({
@@ -430,6 +523,7 @@ gameWss.on('connection', (ws, req) => {
 process.on('SIGINT', async () => {
     logger.info('shutdown', { reason: 'SIGINT' });
     await sessionManager.shutdown();
+    clearInterval(rateLimiterCleanupInterval);
     gameWss.close();
     dashboardWss.close();
     httpServer.close();

@@ -69,6 +69,10 @@ function envInt(name, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function envPct(name, fallback) {
+    return Math.max(0, Math.min(100, envInt(name, fallback)));
+}
+
 function nowIsoSafe() {
     return new Date().toISOString().replace(/[:.]/g, '-');
 }
@@ -148,6 +152,15 @@ function pickConfig() {
         reconnectPct: envInt('RECONNECT_PCT', base.reconnectPct),
         reconnectStorms: envInt('RECONNECT_STORMS', base.reconnectStorms),
         maxGauge: envInt('MAX_GAUGE', base.maxGauge),
+        latencyMs: envInt('LATENCY_MS', 0),
+        jitterMs: envInt('JITTER_MS', 0),
+        packetDelayPct: envPct('PACKET_DELAY_PCT', 0),
+        packetDropPct: envPct('PACKET_DROP_PCT', 0),
+        maliciousPct: envPct('MALICIOUS_PCT', 0),
+        spamHz: envInt('SPAM_HZ', 0),
+        maliciousPayloadBytes: envInt('MALICIOUS_PAYLOAD_BYTES', 8192),
+        duplicateActionPct: envPct('DUPLICATE_ACTION_PCT', 0),
+        rapidJoinLeaveCycles: envInt('RAPID_JOIN_LEAVE_CYCLES', 0),
         sessionId: process.env.SESSION_ID || 'default',
         reportJson: process.env.REPORT_JSON || path.join(__dirname, `extreme-stress-report-${nowIsoSafe()}.json`),
         sampleMs: envInt('SAMPLE_MS', 1000),
@@ -186,6 +199,8 @@ async function runMain() {
     console.log(` Phases       : ramp ${config.rampSec}s, peak ${config.peakSec}s, down ${config.downSec}s`);
     console.log(` Click load   : ${config.clickHz}Hz x burst ${config.burstSize} per client`);
     console.log(` Reconnects   : ${config.reconnectStorms} storms, ${config.reconnectPct}% clients/storm`);
+    console.log(` Network sim  : latency ${config.latencyMs}ms, jitter ${config.jitterMs}ms, delay ${config.packetDelayPct}%, drop ${config.packetDropPct}%`);
+    console.log(` Abuse sim    : malicious ${config.maliciousPct}%, spam ${config.spamHz}Hz, duplicate actions ${config.duplicateActionPct}%, rapid join/leave ${config.rapidJoinLeaveCycles}`);
     console.log(` Session      : ${config.sessionId}`);
     console.log(` Report JSON  : ${config.reportJson}`);
     console.log('');
@@ -268,6 +283,7 @@ async function runMain() {
             `\r[t+${String(elapsed).padStart(3)}s/${totalSec}s] ` +
             `online=${stats.connected || 0} clicks=${stats.clicksSent || 0} ` +
             `msg=${stats.messagesReceived || 0} reco=${stats.reconnects || 0} ` +
+            `rl=${stats.rateLimitedMessages || 0} delay=${stats.delayedMessages || 0} ` +
             `dup=${stats.duplicateMessages || 0} gaps=${stats.sequenceGaps || 0} ` +
             `div=${sample.diverged ? 'yes' : 'no '}   `
         );
@@ -313,6 +329,29 @@ async function runMain() {
             durableDivergenceSamples,
             final: finalConsistency
         },
+        abusePrevention: {
+            rateLimitedMessages: stats.rateLimitedMessages || 0,
+            maliciousMessagesSent: stats.maliciousMessagesSent || 0,
+            duplicateActionsSent: stats.duplicateActionsSent || 0,
+            sessionErrors: stats.sessionErrors || 0
+        },
+        latencySimulation: {
+            configuredLatencyMs: config.latencyMs,
+            configuredJitterMs: config.jitterMs,
+            packetDelayPct: config.packetDelayPct,
+            packetDropPct: config.packetDropPct,
+            delayedMessages: stats.delayedMessages || 0,
+            droppedMessages: stats.droppedMessages || 0,
+            averageInjectedDelayMs: stats.delayedMessages > 0
+                ? Math.round((stats.delayedMsTotal || 0) / stats.delayedMessages)
+                : 0
+        },
+        edgeCases: {
+            reconnectStorms: config.reconnectStorms,
+            intentionalReconnects: stats.intentionalReconnects || 0,
+            reconnects: stats.reconnects || 0,
+            rapidJoinLeaveCycles: stats.rapidJoinLeaveCycles || 0
+        },
         workerStats: Object.fromEntries([...workerStats.entries()].map(([id, value]) => [String(id), value])),
         metrics
     };
@@ -329,6 +368,12 @@ async function runMain() {
     console.log(` Clicks sent         : ${(stats.clicksSent || 0).toLocaleString()}`);
     console.log(` Messages received   : ${(stats.messagesReceived || 0).toLocaleString()}`);
     console.log(` Reconnects          : ${stats.reconnects || 0}`);
+    console.log(` Rate limited msgs   : ${stats.rateLimitedMessages || 0}`);
+    console.log(` Delayed messages    : ${stats.delayedMessages || 0}`);
+    console.log(` Dropped messages    : ${stats.droppedMessages || 0}`);
+    console.log(` Malicious messages  : ${stats.maliciousMessagesSent || 0}`);
+    console.log(` Duplicate actions   : ${stats.duplicateActionsSent || 0}`);
+    console.log(` Rapid join/leaves   : ${stats.rapidJoinLeaveCycles || 0}`);
     console.log(` Duplicate messages  : ${stats.duplicateMessages || 0}`);
     console.log(` Sequence gaps       : ${stats.sequenceGaps || 0}`);
     console.log(` Durable divergence  : ${durableDivergenceSamples.length}`);
@@ -405,7 +450,18 @@ function runWorker(data) {
         duplicateMessages: 0,
         sequenceGaps: 0,
         errors: 0,
-        victories: 0
+        victories: 0,
+        rateLimitedMessages: 0,
+        sessionErrors: 0,
+        serverStatusMessages: 0,
+        degradedStatusMessages: 0,
+        overloadedStatusMessages: 0,
+        delayedMessages: 0,
+        delayedMsTotal: 0,
+        droppedMessages: 0,
+        maliciousMessagesSent: 0,
+        duplicateActionsSent: 0,
+        rapidJoinLeaveCycles: 0
     };
 
     let statsTimer = null;
@@ -435,6 +491,9 @@ function runWorker(data) {
             connectClient(client, false);
             if (rampDelayMs > 5) await sleep(rampDelayMs);
         }
+        if (config.rapidJoinLeaveCycles > 0) {
+            setTimeout(runRapidJoinLeaveCycles, 1000);
+        }
     }
 
     function createClient(globalId) {
@@ -448,9 +507,13 @@ function runWorker(data) {
             connected: false,
             playing: false,
             clickTimer: null,
+            spamTimer: null,
             seenMessageIds: new Set(),
             seqByInstance: new Map(),
-            latestState: null
+            latestState: null,
+            actionSeq: 0,
+            lastActionId: null,
+            malicious: Math.random() < config.maliciousPct / 100
         };
     }
 
@@ -481,6 +544,7 @@ function runWorker(data) {
             if (isReconnect) stats.reconnects++;
             if (stats.connected > stats.peakConnected) stats.peakConnected = stats.connected;
             sendJoin(client);
+            startSpam(client);
         });
 
         ws.on('message', data => {
@@ -496,6 +560,7 @@ function runWorker(data) {
             client.connected = false;
             client.playing = false;
             stopClicking(client);
+            stopSpam(client);
         });
 
         ws.on('error', () => {
@@ -513,18 +578,33 @@ function runWorker(data) {
         }
 
         trackBroadcastMetadata(client, msg);
+        trackControlMessages(msg);
         recordLatestState(client, msg);
         syncGameplayPhase(client, msg);
         handleVictory(client, msg);
     }
 
     function sendJoin(client) {
-        sendJson(client.ws, {
+        sendClientJson(client, {
             type: 'player_join',
             sessionId: config.sessionId,
             playerId: client.playerId,
             name: client.name
         });
+    }
+
+    function trackControlMessages(msg) {
+        if (msg.type === 'rate_limited') {
+            stats.rateLimitedMessages++;
+        }
+        if (msg.type === 'session_error') {
+            stats.sessionErrors++;
+        }
+        if (msg.type === 'server_status') {
+            stats.serverStatusMessages++;
+            if (msg.status === 'degraded') stats.degradedStatusMessages++;
+            if (msg.status === 'overloaded') stats.overloadedStatusMessages++;
+        }
     }
 
     function trackBroadcastMetadata(client, msg) {
@@ -595,12 +675,18 @@ function runWorker(data) {
             }
             for (let i = 0; i < config.burstSize; i++) {
                 try {
-                    sendJson(client.ws, {
+                    const payload = {
                         type: 'click',
                         sessionId: config.sessionId,
                         playerId: client.playerId
-                    });
-                    stats.clicksSent++;
+                    };
+
+                    const actionId = nextActionId(client);
+                    if (actionId) payload.actionId = actionId;
+
+                    if (sendClientJson(client, payload)) {
+                        stats.clicksSent++;
+                    }
                 } catch (_e) {
                     stats.errors++;
                 }
@@ -616,6 +702,59 @@ function runWorker(data) {
         }
     }
 
+    function nextActionId(client) {
+        if (config.duplicateActionPct <= 0) return null;
+        if (client.lastActionId && Math.random() < config.duplicateActionPct / 100) {
+            stats.duplicateActionsSent++;
+            return client.lastActionId;
+        }
+
+        client.actionSeq++;
+        client.lastActionId = `${client.playerId}-${client.actionSeq}`;
+        return client.lastActionId;
+    }
+
+    function startSpam(client) {
+        if (!client.malicious || config.spamHz <= 0 || client.spamTimer) return;
+        const intervalMs = Math.max(1, Math.floor(1000 / config.spamHz));
+        let spamSeq = 0;
+        client.spamTimer = setInterval(() => {
+            if (!client.connected || !isOpen(client.ws)) {
+                stopSpam(client);
+                return;
+            }
+
+            spamSeq++;
+            let sent = false;
+            if (spamSeq % 15 === 0) {
+                sent = sendClientRaw(client, '{"type":"bad_json"');
+            } else if (spamSeq % 10 === 0) {
+                const blobSize = Math.max(0, config.maliciousPayloadBytes);
+                sent = sendClientRaw(client, JSON.stringify({
+                    type: 'spam_payload',
+                    sessionId: config.sessionId,
+                    blob: 'x'.repeat(blobSize)
+                }));
+            } else {
+                sent = sendClientJson(client, {
+                    type: 'spam_action',
+                    sessionId: config.sessionId,
+                    playerId: client.playerId,
+                    seq: spamSeq
+                });
+            }
+            if (sent) stats.maliciousMessagesSent++;
+        }, intervalMs);
+        if (client.spamTimer.unref) client.spamTimer.unref();
+    }
+
+    function stopSpam(client) {
+        if (client.spamTimer) {
+            clearInterval(client.spamTimer);
+            client.spamTimer = null;
+        }
+    }
+
     function reconnectStorm() {
         const connected = clients.filter(isConnectedClient);
         const count = Math.max(1, Math.ceil(connected.length * config.reconnectPct / 100));
@@ -627,12 +766,29 @@ function runWorker(data) {
         });
     }
 
+    function runRapidJoinLeaveCycles() {
+        if (config.rapidJoinLeaveCycles <= 0) return;
+        const candidates = clients.filter(isConnectedClient);
+        const selected = shuffle(candidates).slice(0, Math.max(1, Math.ceil(candidates.length * 0.05)));
+        selected.forEach((client, index) => {
+            for (let cycle = 0; cycle < config.rapidJoinLeaveCycles; cycle++) {
+                const baseDelay = 500 + index * 25 + cycle * 350;
+                setTimeout(() => {
+                    stats.rapidJoinLeaveCycles++;
+                    disconnectForReconnect(client, cycle % 2 === 0);
+                    setTimeout(() => connectClient(client, true), 100 + Math.floor(Math.random() * 250));
+                }, baseDelay);
+            }
+        });
+    }
+
     function isConnectedClient(client) {
         return client.connected && isOpen(client.ws);
     }
 
     function disconnectForReconnect(client, abrupt) {
         stopClicking(client);
+        stopSpam(client);
         if (abrupt) {
             safeTerminate(client.ws);
         } else if (isOpen(client.ws)) {
@@ -658,6 +814,40 @@ function runWorker(data) {
         await sleep(500);
         reportStats();
         process.exit(0);
+    }
+
+    function sendClientJson(client, payload) {
+        return sendClientRaw(client, JSON.stringify({ ...payload, timestamp: payload.timestamp || Date.now() }));
+    }
+
+    function sendClientRaw(client, raw) {
+        if (!client.connected || !isOpen(client.ws)) return false;
+        if (Math.random() < config.packetDropPct / 100) {
+            stats.droppedMessages++;
+            return false;
+        }
+
+        const delayMs = injectedDelayMs();
+        if (delayMs > 0) {
+            stats.delayedMessages++;
+            stats.delayedMsTotal += delayMs;
+            setTimeout(() => {
+                if (client.connected && isOpen(client.ws)) {
+                    client.ws.send(raw);
+                }
+            }, delayMs);
+            return true;
+        }
+
+        client.ws.send(raw);
+        return true;
+    }
+
+    function injectedDelayMs() {
+        const shouldDelay = config.latencyMs > 0 || Math.random() < config.packetDelayPct / 100;
+        if (!shouldDelay) return 0;
+        const jitter = config.jitterMs > 0 ? Math.floor(Math.random() * (config.jitterMs + 1)) : 0;
+        return config.latencyMs + jitter;
     }
 }
 
