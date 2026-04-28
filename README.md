@@ -10,7 +10,7 @@ Le thème "jeu de clics multijoueur" sert de charge applicative réaliste : conn
 - Valider le comportement multi-instance avec Redis.
 - Mesurer les divergences d'état, duplications, trous de séquence et reconnexions.
 - Produire des preuves exploitables par DevOps via `/metrics`, `/healthz`, `/readyz` et rapports JSON.
-- Simuler des scénarios réalistes : surcharge, reconnexion massive, perte d'instance, routage de session.
+- Simuler des scénarios réalistes : surcharge, reconnexion massive, perte d'instance, routage de session, latence réseau et trafic abusif.
 
 ## Stack Principale
 
@@ -65,7 +65,7 @@ node extreme-stress-test.js
 Les sorties importantes pour DevOps sont :
 
 - Rapport JSON du stress test : connexions, clics envoyés, reconnexions, duplications, gaps, divergences.
-- `/metrics` : charge, sessions actives, erreurs de session, statut overloaded/degraded, compteurs de clics.
+- `/metrics` : charge, sessions actives, erreurs de session, statut overloaded/degraded, compteurs de clics, rate limiting et trafic malformé.
 - `/healthz` : instance vivante.
 - `/readyz` : instance prête à servir.
 - Tests Redis multi-instance et session routing.
@@ -80,6 +80,7 @@ Depuis `server/` :
 
 ```bash
 npm test
+node tests-abuse-latency-edge.js
 node tests-multi-instance-local.js
 REDIS_URL=redis://127.0.0.1:6379 node tests-multi-instance.js
 REDIS_URL=redis://127.0.0.1:6379 REPORT_JSON=/tmp/clickwars-session-routing-report.json node tests-session-routing.js
@@ -93,7 +94,9 @@ server/
   GameServer.js                Logique de charge temps réel
   SharedStateStore.js          MemoryStore/RedisStore session-scopés
   SessionManager.js            Routage sessionId et isolation des sessions
+  RateLimiter.js               Anti-abus par connexion WebSocket
   extreme-stress-test.js       Harnais de stress multi-worker
+  tests-abuse-latency-edge.js  Tests rate limiting, latence, cas limites
   tests-session-routing.js     Tests persistance, failure recovery, routing
   tests-multi-instance*.js     Régressions multi-instance
 
